@@ -1,8 +1,13 @@
-
-# Enable DHCPv4 and DHCPv6 on all physical ethernet links
 [Match]
 Kind=!*
 Type=ether
 
 [Network]
-DHCP=yes
+DHCP=ipv4
+LLDP=true
+EmitLLDP=yes
+MulticastDNS=yes
+
+[DHCPv4]
+ClientIdentifier=mac
+UseNTP=true

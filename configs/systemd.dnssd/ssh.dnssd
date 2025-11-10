@@ -1,0 +1,4 @@
+[Service]
+Name=%H SSH
+Type=_ssh._tcp
+Port=22
