@@ -1,12 +1,76 @@
 # Qnap TS-h973AX - NAS server from scratch
 
-[[__TOC__]]
+- [Qnap TS-h973AX - NAS server from scratch](#qnap-ts-h973ax---nas-server-from-scratch)
+  - [Board](#board)
+    - [Specification](#specification)
+    - [UART](#uart)
+      - [Observation](#observation)
+      - [Useful command](#useful-command)
+    - [BIOS](#bios)
+      - [Boot order](#boot-order)
+  - [Arch installation](#arch-installation)
+    - [Kernel parameters](#kernel-parameters)
+    - [OS Partition](#os-partition)
+    - [Basic settings, packages, users](#basic-settings-packages-users)
+      - [System initialization](#system-initialization)
+      - [Locale](#locale)
+      - [Users and permission](#users-and-permission)
+      - [Install basic packages](#install-basic-packages)
+      - [Service to enable](#service-to-enable)
+      - [Install YAY](#install-yay)
+      - [AUR packages](#aur-packages)
+      - [Configure network](#configure-network)
+      - [Initramfs image](#initramfs-image)
+      - [UEFI boot manager](#uefi-boot-manager)
+  - [After first boot](#after-first-boot)
+    - [Other basic settings](#other-basic-settings)
+      - [Resolver](#resolver)
+      - [Propagation dotfile](#propagation-dotfile)
+      - [Timezone and date](#timezone-and-date)
+      - [Hostname](#hostname)
+    - [OS optimization](#os-optimization)
+      - [Network](#network)
+      - [RAM/IO (cache, inotify)](#ramio-cache-inotify)
+      - [RAID](#raid)
+    - [UART fix](#uart-fix)
+      - [Agetty with UART](#agetty-with-uart)
+  - [NAS Server](#nas-server)
+    - [Disk Topology](#disk-topology)
+      - [Partitions](#partitions)
+        - [RAID6 - prepare disk](#raid6---prepare-disk)
+        - [RAID1 - prepare disk](#raid1---prepare-disk)
+        - [NVMe cache - prepare disk](#nvme-cache---prepare-disk)
+    - [RAID via mdadm](#raid-via-mdadm)
+      - [RAID6](#raid6)
+      - [RAID1](#raid1)
+      - [RAID configuration](#raid-configuration)
+      - [RAID optimization](#raid-optimization)
+      - [RAID Mail notification](#raid-mail-notification)
+        - [Postfix](#postfix)
+    - [dm-crypt](#dm-crypt)
+    - [LVM](#lvm)
+      - [Files (Media \& Private)](#files-media--private)
+        - [Cache (Media \& Private)](#cache-media--private)
+      - [ISCSI](#iscsi)
+        - [Cache ISCSI](#cache-iscsi)
+      - [Troubleshooting](#troubleshooting)
+        - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
+      - [dm-cache with SSD](#dm-cache-with-ssd)
+    - [BTRFS - File system](#btrfs---file-system)
+  - [Share files](#share-files)
+    - [Sambda](#sambda)
+    - [DLNA](#dlna)
+  - [ICSCI](#icsci)
+  - [UPS](#ups)
+  - [TODO](#todo)
 
 ## Board
 
 ### Specification
 
-The QNAP TS-h973AX is a 9-bay NAS server in a compact tower design specification:
+The QNAP [TS-h973AX](https://www.qnap.com/en/product/ts-h973ax) is a 9-bay NAS server in a compact tower design.
+
+Specification:
 
 - CPU - AMD Ryzen™ Embedded V1500B 2.2 GHz 2 (8 treads)
 - RAM - max 64GB DDR4 SO-DIMM
@@ -24,7 +88,21 @@ The QNAP TS-h973AX is a 9-bay NAS server in a compact tower design specification
 
 ### UART
 
-The Qnap TS-h973AX doesn't have a video card, but it is adapted to display BIOS, POST, and BOOT log information on the `UART`. Connect your UART dongle according with this picture.
+The TS-h973AX does not have a graphics card, but is capable of displaying information like POST, boot log information via UART interface.
+
+Diagram showing how to connect the UART adapter to the QNAP TS-h973AX board, with particular attention to the correct connections between TXD and RXD:
+
+```bash
+   QNAP BOARD                           UART ADAPTER (USB)
+   -----------                          -------------------
+    [TXD] o------------------------->o [RXD]
+    [RXD] o<-------------------------o [TXD]
+    [GND] o--------------------------o [GND]
+```
+
+UART port location on the motherboard
+
+<img src="assets/uart.png" alt="drawing" width="800"/>
 
 UART parameters:
 
@@ -34,25 +112,68 @@ UART parameters:
 - parity -> none
 - flowcontrol -> none
 
-!!! PICTURE HERE
-
-You can use any UART terminal, I use `picocom`
+You can use any UART terminal, for example, `picocom`
 
 ```bash
 picocom -b 115200 -f n /dev/ttyUSB0
 ```
 
-!!! WARNING !!!
+> [!IMPORTANT]
+> I've spent many hours trying to understand why `UART` works unstable and quickly hangs for never distribution like [Debian](https://www.debian.org), [Arch Linux](https://archlinux.org), [TrueNAS](https://www.truenas.com), but works stable during [POST messages](https://en.wikipedia.org/wiki/Power-on_self-test), [BIOS interaction](https://www.techtarget.com/whatis/definition/BIOS-basic-input-output-system) and **all the time** for [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero).
 
-During POST, BIOS and for `QuTS hero`, the UART works stably without any issues, but with other distributions it works unstable and quickly hangs when another OS starts to boot.
+#### Observation
 
-I've spent many hours trying to understand why the `UART` works stably on `QuTS hero - Linux version 5.10.60-qnap` but very unstable on the newer official `Linux 6.X.` kernels. I've tried various distributions, even `TrueNAS`. The result is always the same: the UART freezes.
+- QuTS hero has an additional command in the [DSDT](https://wiki.archlinux.org/title/DSDT) table for ACPI that allows reconfiguring the UART (`UAR1`, `UAR2`) via an ACPI call, but after trying to change the configuration it refused to turn on.
 
-From my research, IRQ 4 seems to be acting unstable, losing interrupts. I also suspect that some registers are not set correctly by the SuperI/O processor, because calling ACPI `UAR1` -> asking about current settings causes it to unfreeze for a few seconds.
+```bash
+'\_SB.PCI0.UAR1._STA' - _STA: Port Status
+'\_SB.PCI0.UAR1._CRS' - _CRS: Current Resource Settings
+'\_SB.PCI0.SBRG.UAR1._DIS' - _DIS: Disable port
+'\_SB.PCI0.SBRG.UAR1._SRS' - _SRS: Set Resource Settings
+```
+
+- In newer Linux distributions (with Kernel 6.X) which I tested on this board, the UART usually switched to [software flow control](https://en.wikipedia.org/wiki/Software_flow_control) mode automatically. Currently, I am forcing flow control to be disabled via kernel parameters, which makes the UART more stable. This is one-way communication (only receiving logs from Linux)
+
+- After Linux boots, with dedicated [Kernel parameters](#kernel-parameters), the **bidirectional UART communication** is still a big problem. It doesn't matter if software flow control is used; the UART will quickly hang after interaction, when port is freezing, there is not possible to communicate with it, change settings, or even send echo to port `echo "test" > /dev/ttyS0`.
+
+  There is a trick to unfreeze the port for a few seconds, just call this command `cat /proc/tty/driver/serial`
+
+  ```bash
+  $ cat /proc/tty/driver/serial
+    
+  serinfo:1.0 driver revision:
+  0: uart:16550A port:000003F8 irq:4 tx:15316 rx:417 RTS|DTR
+  1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
+  ```
+
+  For now, I discovered that switching the port from [IRQ](https://en.wikipedia.org/wiki/Interrupt_request) to [polling mode](https://en.wikipedia.org/wiki/Polling_(computer_science)) makes the UART stable for bidirectional communication
+
+  ```bash
+  $ cat /proc/tty/driver/serial
+  
+  serinfo:1.0 driver revision:
+  0: uart:16550A port:000003F8 irq:0 tx:16210 rx:465 RTS|DTR
+  1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
+  ```
+
+> [!NOTE]
+> In section [UART fix](#uart-fix) is explained how to make polling mode permanent for each boot (`IRQ 4` -> `IRQ 0`)
+
+#### Useful command
+
+- `cat /proc/tty/driver/serial` - UART status with flags/registry
+- `fuser -v /dev/ttyS0` - shows which process is hanging/using the port, kill all processes with `-k`
+- `echo on | sudo tee /sys/class/tty/ttyS0/device/power/control` - disable automatic power suspension
+- `/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0` - port using polling
+- `/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 4` - port using IRQ
+- `udevadm info -a -n /dev/ttyS0 | grep -E 'DRIVER|DEVPATH|SUBSYSTEM` - information about driver hierarchy
+
+> [!NOTE]
+> `setserial` can be installed from [AUR](https://aur.archlinux.org/packages/setserial)
 
 ### BIOS
 
-When your `UART` is already working, pressing `DEL` during POST information, you can entry to the BIOS
+It was mentioned that the UART works stably during POST messages and BIOS interaction, pressing `DEL` during POST allows you to enter BIOS
 
 ```bash
 Version 2.20.1274. Copyright (C) 2021 American Megatrends, Inc.                 
@@ -63,49 +184,52 @@ Press <DEL> or <ESC> to enter setup.
 From interesting changes, are:
 
 - turn off the `BIOS Beep Function` - no more noise beep
-- adapt the `Restore AC Power Loss` - this can be managed from `QuTS hero`
-- update `Boot Option Priorities` - setup your own boot order
+- adapt the `Restore AC Power Loss` - this also can be changed from [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero)
+- update `Boot Option Priorities` - configure your own boot order
 
 ```bash
                  Aptio Setup Utility - Copyright (C) 2021 American Megatrends, Inc.                 
     Main  Advanced  Chipset  Security  Boot  Save & Exit                                            
-��������������������������������������������������������������������������������������������������Ŀ
-�  Boot Configuration                                             �Select the keyboard NumLock     �
-�  Bootup NumLock State                 [On]                      �state                           �
-�  Quiet Boot                           [Disabled]                �                                �
-�                                                                 �                                �
-�  Boot Option Priorities                                         �                                �
-�  Boot Option #1                       [UEFI OS (KINGSTON        �                                �
-�                                       SNV3S500G)]               �                                �
-�  Boot Option #2                       [KINGSTON SNV3S500G]      �                                �
-�  Boot Option #3                       [UEFI: Built-in EFI       �                                �
-�                                       Shell]                    �                                �
-�                                                                 �                                �
-�                                                                 �                                �
-�                                                                 ��������������������������������ĳ
-�                                                                 �><: Select Screen               �
-�                                                                 �▒: Select Item                  �
-�                                                                 �Enter: Select                   �
-�                                                                 �+/-: Change Opt.                �
-�                                                                 �F1: General Help                �
-�                                                                 �F2: Previous Values             �
-�                                                                 �F3: Optimized Defaults          �
-�                                                                 �F4: Save & Exit                 �
-�                                                                 �ESC: Exit                       �
-�                                                                 �                                �
-�                                                                 �                                �
-�                                                                 �                                �
-�                                                                 �                                �
-����������������������������������������������������������������������������������������������������
++-----------------------------------------------------------------+--------------------------------+
+|  Boot Configuration                                             |Select the keyboard NumLock     |
+|  Bootup NumLock State                 [On]                      |state                           |
+|  Quiet Boot                           [Disabled]                |                                |
+|                                                                 |                                |
+|  Boot Option Priorities                                         |                                |
+|  Boot Option #1                       [UEFI OS (KINGSTON        |                                |
+|                                       SNV3S500G)]               |                                |
+|  Boot Option #2                       [KINGSTON SNV3S500G]      |                                |
+|  Boot Option #3                       [UEFI: Built-in EFI       |                                |
+|                                       Shell]                    |                                |
+|                                                                 |                                |
+|                                                                 |                                |
+|                                                                 +--------------------------------+
+|                                                                 |><: Select Screen               |
+|                                                                 |space: Select Item              |
+|                                                                 |Enter: Select                   |
+|                                                                 |+/-: Change Opt.                |
+|                                                                 |F1: General Help                |
+|                                                                 |F2: Previous Values             |
+|                                                                 |F3: Optimized Defaults          |
+|                                                                 |F4: Save & Exit                 |
+|                                                                 |ESC: Exit                       |
+|                                                                 |                                |
+|                                                                 |                                |
+|                                                                 |                                |
+|                                                                 |                                |
++-----------------------------------------------------------------+--------------------------------+
                   Version 2.20.1274. Copyright (C) 2021 American Megatrends, Inc.     
 ```
 
-!!! Important !!!
+#### Boot order
 
-This BIOS v2.20.1274 allowing to boot only from USB device or NVMe disk.
-SATA disk are not available in a `BOOT Option`, so you have two options to make is working:
+> [!IMPORTANT]
+> This BIOS v2.20.1274 allowing to boot only from [USB device](https://en.wikipedia.org/wiki/USB) or [NVMe disk](https://en.wikipedia.org/wiki/NVM_Express).  
+> [SATA disk](https://en.wikipedia.org/wiki/SATA) are not available in a `BOOT Option`.
 
-1. Use internal USB-DOM as EFI partition, which will allow to boot system from SATA disk
+There are two possibilities to make the boot work:
+
+1. Use internal USB-DOM as an EFI partition, which will allow booting the operating system from the SATA drive.
 
    ```bash
    +-----------+      +-------------------------------+
@@ -119,14 +243,22 @@ SATA disk are not available in a `BOOT Option`, so you have two options to make 
    +-----------+      +-------------------------------+
    ```
 
-   - __USB DOM__: Small USB device used exclusively to host the EFI partition
+   - __USB DOM__: Small USB device used to host the EFI partition
    - __HDD__: Main disk storage for the operating system
 
-   This setup doesn't require any interaction with `BOOT Option` because bios already booting OS from USB-DOM.
+   This configuration does not require any interaction with the `BOOT Option`, because the USB-DOM can be connected to another computer and prepared accordingly, and QNAP will still try to read the EFI partitions from the USB-DOM.
 
-2. Use a QNAP U.2 NVMe adapter to use an NVMe drive. Thanks to a dedicated onboard interface, this drive is accessible at full speed to the motherboard. The NVMe drive is also available as a boot option.
+   I used such adapter
 
-   TIP: The 3rd party adapter from NVMe -> SATA will not allow to seen this disk as NVMe. because it uses only the SATA interface.
+   <img src="assets/usb-dom-adapter.png" alt="drawing" width="452"/><img src="assets/usb-dom.png" alt="drawing" width="500"/>
+
+> [!WARNING]
+> Remember to make a copy of the USB-DOM memory.  
+> Command `dd if=/dev/sda of=./qnap.img`
+
+1. Using the [QNAP U.2 NVMe adapter](https://eustore.qnap.com/qda-ump4.html) with an NVMe drive. Thanks to a dedicated interface on the TS-h973AX motherboard, the NVMe drive is available as a boot option and operates at full speed.
+
+   This configuration requires interaction with the `BOOT Option`, and using an NVMe drive as a boot drive, but the speed gain is significant.
 
    ```bash
    +-------------------------------+
@@ -140,69 +272,85 @@ SATA disk are not available in a `BOOT Option`, so you have two options to make 
    +-------------------------------+
    ```
 
-   - __NVMe SSD__: Single NVMe device for both boot and root
-   - __EFI Partition__: Dedicated EFI System Partition (usually 100–512 MB, FAT32)
+   __NVMe SSD__: Single NVMe disk for both `EFI` and `root`
 
-   This setup requires interaction with `BOOT Option`, but the system loads very quickly.
-
-   !!! picture of adapter !!!
+> [!IMPORTANT]
+> A standard NVMe-to-SATA adapter won't detect this drive as NVMe because it only uses the SATA interface for data transfer. Use a U.2 NVMe adapter with an SFF-8639 connector.  
+> To learn more about the QNAP adapter's design, see the images below.
+>
+> <img src="assets/adapter1.png" alt="drawing" width="622"/><img src="assets/adapter2.png" alt="drawing" width="700"/>
 
 ## Arch installation
 
-Arch Linux live distributions always start with an already running SSH server, you just need to set a root password and this will allow you to successfully log in to the Arch live distribution. So you need wait a few minutes until boot is finished and type following command (ofc. connect keyboard to QNAP)
+[Arch Linux Live distributions](https://wiki.archlinux.org/title/USB_flash_installation_medium) always boot with an SSH server already running. Simply setting a root password will allow you to successfully log in to the Arch Live distribution via SSH. The tricky part is that you need to set a `root` password without being able to see what you are doing, so wait a few minutes for the boot process to finish and then enter the command below (with a keyboard connected to the QNAP, of course).
 
 ```bash
 passwd root
 ```
 
-and repeat password twice, check full flow
+Repeat the password twice.
 
-```base
-passwd root
-New password: 
-Retype new password:
-passwd: password updated successfully
+> [!TIP]
+> I recommend understanding the entire flow because you have to execute these commands from memory
+>
+> ```bash
+> passwd root
+> New password: 
+> Retype new password:
+> passwd: password updated successfully
+> ```
+
+after that, you can use SSH to log in to Arch Live distribution (this IP `192.168.1.123` is just an example; you need to figure out the IP of Arch Live distribution)
+
+```bash
+ssh root@192.168.1.123
 ```
 
-then you can use SSH, but if something goes wrong, without video/UART it will be difficult to troubleshoot (go to [Kernel parameters](Kernel parameters) section)
-
-!!! validate link !!!
-
-This installation process only extends the great [Arch Installation guide](<https://wiki.archlinux.org/title/Installation_guide>) which I recommend.
+> [!NOTE]
+> This installation process is just an extension of the excellent [Arch Installation Guide](<https://wiki.archlinux.org/title/Installation_guide>), which I recommend.
 
 ### Kernel parameters
 
-The following kernel parameters make the UART work stably __ONLY__ when receiving logs (one-way communication). __The order of parameters are maters.__
+The following kernel parameters ensure stable UART operation __ONLY__ when receiving logs (one-way communication). __The order of the parameters is important.__
 
 ```bash
 earlycon=uart8250,io,0x3f8,115200 console=ttyS0,115200n8 console=tty0 loglevel=6 no_console_suspend 8250.nr_uarts=1 8250.share_irqs=1 8250.skip_tx_test=1 8250.autoflow=0
 ```
 
-TODO: Would require validate parameters again
+> [!NOTE]
+> Needs to be reviewed again
 
 ### OS Partition
 
-Partitioning depends on the approach you choose, with or without USB-DOM. I prefer to use a single NVMe drive for the entire system (without USB-DOM)
+Partitioning depends on the approach you choose, with or without a USB DOM (see [Boot Order](#boot-order) for more information). This guide uses a single NVMe drive for the entire system (without a USB DOM).
 
-   ```bash
-   +-------------------------------+
-   |           NVMe SSD            |
-   |            1 disk             |
-   +-----------+-------------------+
-   |           |                   |
-   |   EFI     |      Linus OS     |
-   | Partition |                   |
-   |           |                   |
-   +-------------------------------+
-   ```
+```bash
++-------------------------------+
+|           NVMe SSD            |
+|            1 disk             |
++-----------+-------------------+
+|           |                   |
+|   EFI     |      Linus OS     |
+| Partition |                   |
+|           |                   |
++-------------------------------+
+```
 
 ### Basic settings, packages, users
 
-System initialization
+#### System initialization
+
+Requires all system partitions to be properly mounted on `/mnt`, check the visualization of the mount point layout
+
+```text
+/mnt        (root partition)
+├── boot    (EFI under /mnt/boot)
+└── home    (user data /mnt/home)
+```
 
 ```bash
-pacstrap /mnt base base-devel vim linux linux-headers linux-firmware amd-ucode openssh bash-completion
-
+pacstrap /mnt amd-ucode base base-devel bash-completion \
+  linux linux-headers linux-firmware openssh vim btrfs-progs
 ```
 
 Remember to generate `fstab`
@@ -211,25 +359,66 @@ Remember to generate `fstab`
 genfstab -U -p /mnt > /mnt/etc/fstab
 ```
 
-Chroot to new OS
+[Chroot](https://en.wikipedia.org/wiki/Chroot) to new OS
 
 ```bash
 arch-chroot /mnt
 ```
 
-#### Set root password
+#### Locale
+
+Set locale
+
+```bash
+echo "en_US.UTF-8 UTF-8" >  /etc/locale-gen
+echo "pl_PL.UTF-8 UTF-8" >> /etc/locale-gen
+
+locale-gen
+```
+
+```bash
+localectl set-keymap pl2
+```
+
+> [!NOTE]
+> command `localectl set-keymap pl2` need to be repeat after first boot,
+> because now `/etc/vconsole.conf` is required to generate a correct `initramfs-linux.img`
+> but `localectl` not fully working in a `chroot`
+
+```bash
+echo "KEYMAP=pl2" > /etc/vconsole.conf
+```
+
+#### Users and permission
+
+Set root password
 
 ```bash
 passwd root
 ```
 
+Create user
+
+```bash
+useradd -g users -G wheel,lock -m -s /bin/bash my_user
+passwd my_user
+```
+
+Modify `/etc/sudoers` via `visudo` command
+
+```diff
+...
+ ## Uncomment to allow members of group wheel to execute any command
+-# %wheel ALL=(ALL:ALL) ALL
++%wheel ALL=(ALL:ALL) ALL
+...
+```
+
 #### Install basic packages
 
 ```bash
-pacman -Syy
-
+pacman -Syy && \
 pacman -S acpi acpid acpi_call-dkms \
-  btrfs-progs \
   dmidecode \
   git \
   go \
@@ -242,7 +431,12 @@ pacman -S acpi acpid acpi_call-dkms \
   samba \
   smartmontools \
   snapper \
-  sysstat
+  sysstat \
+  zsh \
+  systemd-resolvconf \
+  zsh-autosuggestions \
+  zsh-history-substring-search \
+  zsh-syntax-highlighting
 ```
 
 #### Service to enable
@@ -254,26 +448,23 @@ systemctl enable systemd-network
 systemctl enable systemd-resolved
 ```
 
-#### Create user
-
-```bash
-useradd my_user -g users -G wheel,lock
-passwd my_user
-```
-
 #### Install YAY
 
 Remember to to switch to regular user `my_user`
 
 ```bash
-cd /tmp
 git clone https://aur.archlinux.org/yay.git
 cd yay
 makepkg -is
 ```
 
+#### AUR packages
+
 ```bash
-yay -S setserial
+yay -S setserial \
+  fzf-marks \
+  ttf-meslo-nerd-font-powerlevel10k \
+  zsh-theme-powerlevel10k-git
 ```
 
 #### Configure network
@@ -292,42 +483,103 @@ DHCP=yes
 
 #### Initramfs image
 
-I use `BTRFS` as files system, is good to add `btrfs` module
+If you use a `BTRFS` as files system, is good to add `btrfs` module
 
 ```conf
 # /etc/mkinitcpio.conf
+
 ...
 MODULES=(vfat)
 ...
 
 BINARIES=(btrfs)
+```
+
+#### UEFI boot manager
+
+Executing the command below will copy the necessary files/directories to `/boot`
 
 ```bash
 bootctl install
 ```
 
-next, create entry for boot with UART support
+then create an entry for boot with UART support, remember to update the `root` UUID (use `blkid` or `lsblk -f`)
 
 ```conf
-# /boot/loader/entries/arch.conf 
+# /boot/loader/entries/arch.conf
+
 title Arch
 linux /vmlinuz-linux
 initrd /initramfs-linux.img
 initrd /amd-ucode.img
-options root=UUID=ROOT_UUID rw mitigations=auto audit=0 earlycon=uart8250,io,0x3f8,115200 console=ttyS0,115200n8 console=tty0 loglevel=6 no_console_suspend 8250.nr_uarts=1 8250.share_irqs=1 8250.skip_tx_test=1 8250.autoflow=0
+options root=UUID=8398cd78-1111-2222-3333-f880264aa816 rw mitigations=auto audit=0 earlycon=uart8250,io,0x3f8,115200 console=ttyS0,115200n8 console=tty0 loglevel=6 no_console_suspend 8250.nr_uarts=1 8250.share_irqs=1 8250.skip_tx_test=1 8250.autoflow=0
 ```
 
-#### UEFI boot manager
+> [!WARNING]
+> you should be ready to reboot Qnap server,
 
 ## After first boot
 
 ### Other basic settings
 
-enable ntp
-hostnamcetl
-timedatectl
+#### Resolver
 
-### Optimization
+```bash
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+```
+
+```conf
+#  /etc/resolv.conf
+
+[Resolve]
+
+FallbackDNS=1.1.1.1
+MulticastDNS=yes
+LLMNR=yes
+Cache=no-negative
+ReadEtcHosts=yes
+StaleRetentionSec=0
+```
+
+```bash
+systemctl restart systemd-resolved
+```
+
+#### Propagation dotfile
+
+To propagate file configuration for each new user, add file to `/etc/skel`
+
+```bash
+cp .vim /etc/skel
+```
+
+```bash
+cp .zshrc /etc/skel
+```
+
+Copy file to existing user
+
+```bash
+cp /etc/shel/* /home/my_user
+```
+
+#### Timezone and date
+
+```bash
+timedatectl set-timezone Europe/Warsaw
+```
+
+```bash
+timedatectl set-ntp true
+```
+
+#### Hostname
+
+```bash
+hostnamectl hostname qnap
+```
+
+### OS optimization
 
 #### Network
 
@@ -411,6 +663,7 @@ fs.inotify.max_user_watches = 1048576
 
 ```conf
 # /etc/sysctl.d/99-md-raid.conf
+
 dev.raid.speed_limit_min = 50000
 dev.raid.speed_limit_max = 800000
 ```
@@ -423,23 +676,45 @@ dev.raid.speed_limit_max = 800000
 
   A throttle ceiling for those same background tasks. If the array and disks are fast enough, the kernel won’t let resync/rebuild exceed ~0.8 GB/s. Higher values finish rebuilds sooner (reducing time-at-risk) but can steal I/O from your applications while the operation runs.
 
-### UDEV
+### UART fix
 
-#### UART fix
+In the [Board/UART](#boot-order) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data, switches to polling mode (timer-controlled) the UART operation is slower but stable.
 
-In the [Board/UART] section it was mentioned that in newer Linux `6.X` kernels the UART interface of this board on ttyS0 is unstable in case of interrupts (IRQs), which causes transmission/reception to stop. The udev rule switches to polling mode (timer-controlled) by running:
+Manually step validation
 
-```bash
-setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0
-```
+1. Check current `UART` settings
 
-and disables runtime power management:
+   ```bash
+   $ cat /proc/tty/driver/serial
+   
+   serinfo:1.0 driver revision:
+   0: uart:16550A port:000003F8 irq:4 tx:121 rx:0 RTS|DTR
+   1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
+   ```
 
-```bash
-echo on | sudo tee /sys/class/tty/ttyS0/device/power/control
-```
+2. Switch `IRQ 4` to `IRQ 0` (pooling mode)
 
-To make it automaticly every boot, create following `udev` rule:
+   ```bash
+   setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0
+   ```
+
+3. Validate change
+
+   ```bash
+   $ cat /proc/tty/driver/serial
+   
+   serinfo:1.0 driver revision:
+   0: uart:16550A port:000003F8 irq:0 tx:450 rx:0 RTS|DTR
+   1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
+   ```
+
+4. Turn off the power suspend for UART
+
+    ```bash
+    echo on | sudo tee /sys/class/tty/ttyS0/device/power/control
+    ```
+
+To apply these changes automatically on every boot, create following `udev` rule:
 
 ```conf
 # /etc/udev/rules.d/99-ttyS0-nopm.rules
@@ -448,7 +723,34 @@ KERNEL=="ttyS0", RUN+="/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0"
 ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyS0", ATTR{device/power/control}="on"
 ```
 
-TIP: Remember ro install `setserial` from [AUR](https://aur.archlinux.org/packages/setserial)
+> [!TIP]
+> `setserial` needs to be installed from [AUR](https://aur.archlinux.org/packages/setserial)
+
+#### Agetty with UART
+
+```bash
+systemctl edit serial-getty@ttyS0.service
+```
+
+```diff
+### Editing /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
+### Anything between here and the comment below will become the contents of the drop-in file
+
++[Service]
++ExecStart=
++ExecStart=-/sbin/agetty -o '-p -- \\u' -8 -L -t 0 -I $'\x11' 115200 %I vt102
++Restart=always
+
+### Edits below this comment will be discarded
+```
+
+```bash
+systemctl enable serial-getty@ttyS0.service
+```
+
+```bash
+systemctl daemon-reload
+```
 
 ## NAS Server
 
@@ -459,23 +761,28 @@ TIP: Remember ro install `setserial` from [AUR](https://aur.archlinux.org/packag
 RAID6 mdadm - 5x4TB HDD
   └─ cryptsetup - encrypt whole space
        └─ Luks2 - PV: crypt_files + crypt_cache_files
-            ├─ lv_files → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
+            ├─ lv_private → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
             └─ lv_media → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
 
 
-# ISCSI — dedicated aray for ISCSI
+# ISCSI — dedicated aray for ISCSI with cache
 RAID1 mdadm - 2x500G HDD
   └─ cryptsetup - encrypt whole space
        └─ Luks2 - PV: crypt_iscsi + crypt_cache_iscsi
             └─ lv_iscsi → backstore=block (LIO) + dm-cache (NVMe, writeback)
 ```
 
-`writethrough` - allow to sleep disk,
-`writeback` - UPS required
+- `writethrough` - Writes go to both the cache device and the origin device simultaneously; reads can be served from cache. Improves read performance and is safe against cache failure, but write performance is roughly the same as without caching.
+
+- `writeback` - Writes land in the cache first and are flushed to the origin later. Delivers fast writes and strong overall performance, but carries risk of data loss/inconsistency if the cache fails or power is lost (unless the cache has power-loss protection).
 
 #### Partitions
 
-For RAID6 the partition table needs to be a `GPT` and partition need to be `Linux RAID`
+##### RAID6 - prepare disk
+
+- `GPT` - partition table
+- `Linux RAID` - parition type
+- minimum 4 disk
 
 ```bash
 Disk /dev/sdc: 3.64 TiB, 4000787030016 bytes, 7814037168 sectors
@@ -490,7 +797,11 @@ Device     Start        End    Sectors  Size Type
 /dev/sdc1   2048 7814035455 7814033408  3.6T Linux RAID
 ```
 
-For RAID1 the same
+##### RAID1 - prepare disk
+
+- `GPT` - partition table
+- `Linux RAID` - parition type
+- minimum 2 disk
 
 ```bash
 Disk /dev/sda: 465.76 GiB, 500107862016 bytes, 976773168 sectors
@@ -505,12 +816,15 @@ Device     Start       End   Sectors   Size Type
 /dev/sda1   2048 976773119 976771072 465.8G Linux RAID
 ```
 
-NVMe disk, which will be used for `dm-cache` need to be split for each raid instance, in this case needs to be split to two partitions:
+##### NVMe cache - prepare disk
+
+The cache will be built on `dm-cache` because there are two RAID arrays, which requires creating two partitions.
 
 - 650G for files
 - 200G for iscsi
 
-TIP: is good to not use whole space, to safe some space for replacing broken memory, what can happen for SSD disk
+> [!TIP]
+> It is a good practice not to allocate all the space of SSD disk, the free space can be used to replace the damaged memory.
 
 ```bash
 Disk model: IR-SSDPR-P34B-01T-80                    
@@ -525,9 +839,9 @@ Device             Start       End   Sectors  Size Type
 /dev/nvme1n1p2 170393856 222822655  52428800  200G Linux filesystem
 ```
 
-#### Create Raid
+### RAID via mdadm
 
-Create RAID6
+#### RAID6
 
 ```bash
 mdadm --create /dev/md0 --level=6 \
@@ -538,8 +852,9 @@ mdadm --create /dev/md0 --level=6 \
   /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sdd1 /dev/sde1
 ```
 
-Create RAID1
+#### RAID1
 
+```bash
 mdadm --create /dev/md0 --level=1 \
   --raid-devices=2 \
   --metadata=1.2 \
@@ -549,13 +864,15 @@ mdadm --create /dev/md0 --level=1 \
 
 ```
 
-It's required to add map of raid to `/etc/mdadm.conf`
+#### RAID configuration
+
+Add the RAID map to `/etc/mdadm.conf`
 
 ```bash
 sudo mdadm --detail --scan | sudo tee /etc/mdadm.conf
 ```
 
-which should lokks like this
+which should give the following results
 
 ```conf
 cat /etc/mdadm.conf 
@@ -563,10 +880,11 @@ ARRAY /dev/md0 metadata=1.2 UUID=e9ab286b:4d2232ae:fbb328ae:96b98307
 ARRAY /dev/md1 metadata=1.2 UUID=cd295687:710983a2:93d611f8:2e32e0cf
 ```
 
-You can check the status of raid with following command
+Check the RAID status
 
 ```bash
-cat /proc/mdstat 
+$ cat /proc/mdstat
+
 Personalities : [raid1] [raid4] [raid5] [raid6] 
 md1 : active raid1 sdb1[1] sda1[0]
       488253440 blocks super 1.2 [2/2] [UU]
@@ -579,8 +897,443 @@ md0 : active raid6 sde1[2] sdd1[1] sdf1[3] sdc1[0] sdg1[4]
 unused devices: <none>
 ```
 
+#### RAID optimization
+
+```conf
+# /etc/udev/rules.d/99-md-raid.rules
+
+ACTION=="add|change", KERNEL=="md0", ATTR{md/stripe_cache_size}="8192"
+ACTION=="add|change", KERNEL=="md0", RUN+="/sbin/blockdev --setra 4096 /dev/md0"
+ACTION=="add|change", KERNEL=="md1", RUN+="/sbin/blockdev --setra 16384 /dev/md1"
+```
+
+- `RAID6` (MD0) benefits from a larger stripe cache to mitigate parity overhead and from a moderate readahead that aligns with full-stripe multiples, improving both normal sequential I/O and rebuild/check operations.
+
+- `RAID1` (MD1) doesn’t use stripe parity; therefore the stripe cache isn’t applicable. It does benefit from an even larger readahead when the expected workload is heavy, sequential reads—hence 8 MiB to maximize streaming performance.
+
+#### RAID Mail notification
+
+In order to send emails, a properly configured mail transfer agent is required [check Postfix section](#postfix)
+
+```conf
+MAILADDR user@domain
+```
+
+Verify that everything is working as it should, run the following command
+
+```bash
+mdadm --monitor --scan --oneshot --test
+```
+
+```bash
+mdadm --detail /dev/md0
+
+/dev/md0:
+           Version : 1.2
+     Creation Time : Fri Nov  7 19:17:06 2025
+        Raid Level : raid6
+        Array Size : 11720653824 (10.92 TiB 12.00 TB)
+     Used Dev Size : 3906884608 (3.64 TiB 4.00 TB)
+      Raid Devices : 5
+     Total Devices : 5
+       Persistence : Superblock is persistent
+
+     Intent Bitmap : Internal
+
+       Update Time : Wed Nov 12 23:17:02 2025
+             State : clean 
+    Active Devices : 5
+   Working Devices : 5
+    Failed Devices : 0
+     Spare Devices : 0
+
+            Layout : left-symmetric
+        Chunk Size : 256K
+
+Consistency Policy : bitmap
+
+              Name : qnap:0  (local to host qnap)
+              UUID : e9ab286b:4d2232ae:fbb328ae:96b98307
+            Events : 11474
+
+    Number   Major   Minor   RaidDevice State
+       0       8       33        0      active sync   /dev/sdc1
+       1       8       49        1      active sync   /dev/sdd1
+       2       8       65        2      active sync   /dev/sde1
+       3       8       81        3      active sync   /dev/sdf1
+       4       8       97        4      active sync   /dev/sdg1
+```
+
+##### Postfix
+
+```bash
+pacman -S postfix cyrus-sasl s-nail
+```
+
+Configuration
+
+```conf
+# /etc/postfix/main.cf'
+
+relayhost = [smtp.gmail.com]:587
+smtp_use_tls = yes
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+```
+
+Password
+
+```conf
+# /etc/postfix/sasl_passwd 
+
+[smtp.gmail.com]:587    <user>@gmail.com:<password>
+```
+
+Encryption map
+
+```conf
+# /etc/postfix/tls_policy
+
+[smtp.gmail.com]:587 encrypt
+```
+
+```bash
+chmod 600 /etc/postfix/sasl_passwd
+postmap /etc/postfix/sasl_passwd
+postmap /etc/postfix/tls_policy
+```
+
+Restart service and check the status
+
+```bash
+systemctl restart postfix.service
+```
+
+Test mail
+
+```bash
+echo "This is the body of an encrypted email" | mail -s "This is the subject line" mygmaildest@gmail.com
+```
+
+> [!IMPORTANT]
+>
+> Add hook `mdadm_udev` after `block` to `/etc/mkinitcpio.conf`  
+> `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
+>
+> In case you want to have access to RAID in early boot
+> `MODULES=(md_mod raid6_pq raid1)`
+
+### dm-crypt
+
+Encryption performance depends on the hardware features supported, so benchamrk is important. [check this guide](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption)
+
+```bash
+cryptsetup benchmark 
+
+# Tests are approximate using memory only (no storage IO).
+PBKDF2-sha1      1072163 iterations per second for 256-bit key
+PBKDF2-sha256    2076388 iterations per second for 256-bit key
+PBKDF2-sha512     688946 iterations per second for 256-bit key
+PBKDF2-ripemd160  386643 iterations per second for 256-bit key
+PBKDF2-whirlpool  274784 iterations per second for 256-bit key
+argon2i       4 iterations, 924844 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
+argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
+#     Algorithm |       Key |      Encryption |      Decryption
+        aes-cbc        128b       446.3 MiB/s       898.6 MiB/s
+    serpent-cbc        128b        46.7 MiB/s       157.0 MiB/s
+    twofish-cbc        128b        88.4 MiB/s       159.4 MiB/s
+        aes-cbc        256b       349.6 MiB/s       853.7 MiB/s
+    serpent-cbc        256b        46.7 MiB/s       157.0 MiB/s
+    twofish-cbc        256b        88.4 MiB/s       159.4 MiB/s
+        aes-xts        256b      1054.6 MiB/s      1054.1 MiB/s
+    serpent-xts        256b       145.4 MiB/s       145.5 MiB/s
+    twofish-xts        256b       148.0 MiB/s       147.7 MiB/s
+        aes-xts        512b       951.1 MiB/s       950.5 MiB/s
+    serpent-xts        512b       145.4 MiB/s       145.5 MiB/s
+    twofish-xts        512b       144.4 MiB/s       147.6 MiB/s
+```
+
+Encrypt RAID6, RAID1, and both cache partitions
+
+```bash
+cryptsetup luksFormat /dev/md0 -s 256 -c aes-xts-plain64 -h sha256
+
+WARNING!
+========
+This will overwrite data on /dev/md0 irrevocably.
+
+Are you sure? (Type 'yes' in capital letters): YES
+
+Enter passphrase for /dev/md0: 
+Verify passphrase:
+```
+
+To automatically unlock the encrypted partition on boot, create a binary key
+
+```bash
+dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/srv_files.key
+```
+
+```bash
+# /etc/cryptsetup-keys.d
+
+-rw------- 1 root root 2048 Nov  8 19:53 nvme_cache_files.key
+-rw------- 1 root root 2048 Nov  8 19:53 nvme_cache_iscsi.key
+-rw------- 1 root root 2048 Nov  8 19:52 srv_files.key
+-rw------- 1 root root 2048 Nov  8 19:53 srv_iscsi.key
+```
+
+Then add the binary key to available slots for each partition
+
+```bash
+cryptsetup luksAddKey -S 7 /dev/md0 /etc/cryptsetup-keys.d/srv_files.key
+```
+
+Update `crypttab`
+
+```bash
+# /etc/crypttab 
+
+crypt_files         UUID=c4f4f635-762a-4102-a049-123456789011   /etc/cryptsetup-keys.d/srv_files.key            luks
+crypt_iscsi         UUID=2790f108-1a01-4501-abae-123456789011   /etc/cryptsetup-keys.d/srv_iscsi.key            luks
+crypt_cache_files   UUID=9bc667a9-ed69-4b4a-93af-123456789011   /etc/cryptsetup-keys.d/nvme_cache_files.key     luks
+crypt_cache_iscsi   UUID=8bf542fe-a3cd-4944-97fe-123456789011   /etc/cryptsetup-keys.d/nvme_cache_iscsi.key     luks
+```
+
+Check if auto unlock is configured correctly
+
+```bash
+systemctl daemon-reload 
+```
+
+Generate following services
+
+```bash
+systemd-cryptsetup@crypt_cache_iscsi.service 
+systemd-cryptsetup@crypt_cache_iscsi.service 
+systemd-cryptsetup@crypt_cache_iscsi.service 
+systemd-cryptsetup@crypt_cache_files.service 
+```
+
+```bash
+systemctl start systemd-cryptsetup@crypt_cache_iscsi.service
+systemctl status systemd-cryptsetup@crypt_cache_iscsi.service
+```
+
+> [!IMPORTANT]
+>
+> Add hook `sd-encrypt` after `mdadm_udev` to `/etc/mkinitcpio.conf`  
+> `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
+
+### LVM
+
+#### Files (Media & Private)
+
+```bash
+pvcreate /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
+```
+
+```bash
+vgcreate vg_files /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
+```
+
+Temporary block cache PV
+
+```bash
+pvchange -x n /dev/mapper/crypt_cache_files
+```
+
+```bash
+lvcreate -l 6T -n lv_media vg_files /dev/mapper/crypt_files
+lvcreate -L 100%FREE -n lv_private vg_files /dev/mapper/crypt_files
+```
+
+Unblock cache parition
+
+```bash
+pvchange -x y /dev/mapper/crypt_cache_files
+```
+
+Media cache partition
+
+```bash
+lvcreate -L 300G -n cachedata_media vg_files /dev/mapper/crypt_cache_files
+lvcreate -L  12G -n cachemeta_media vg_files /dev/mapper/crypt_cache_files
+```
+
+Private cache partition
+
+```bash
+lvcreate -L 300G -n cachedata_private vg_files /dev/mapper/crypt_cache_files
+lvcreate -L  12G -n cachemeta_private vg_files /dev/mapper/crypt_cache_files
+```
+
+> [!IMPORTANT]
+>
+> Add hook `lvm2` after `sd-encrypt` to `/etc/mkinitcpio.conf`  
+> `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
+
+##### Cache (Media & Private)
+
+Convert SSD `cachemeta_media` and `cachedata_media` to cache pool
+
+```bash
+lvconvert --type cache-pool --chunksize 512k --poolmetadata vg_files/cachemeta_media vg_files/cachedata_media
+lvconvert --type cache --cachepool vg_files/cachedata_media --cachemode writethrough vg_files/lv_media
+```
+
+Convert SSD `cachemeta_private` and `cachedata_private` to cache pool
+
+```bash
+lvconvert --type cache-pool --chunksize 512k --poolmetadata vg_files/cachemeta_private vg_files/cachedata_private
+lvconvert --type cache --cachepool vg_files/cachedata_private --cachemode writethrough vg_files/lv_private
+```
+
+Validation
+
+```bash
+$ lvs
+
+  LV         VG       Attr       LSize  Pool     Origin           Data%  Meta%  Move Log Cpy%Sync Convert
+  lv_media   vg_files -wi-a-----  6.00t                            0.00   0.05            0.00            
+  lv_private vg_files -wi-a----- <4.92t                            0.00   0.05            0.00
+```
+
+Should change to this
+
+```bash
+$ lvs
+
+  LV         VG       Attr       LSize  Pool                      Origin             Data%  Meta%  Move Log Cpy%Sync Convert
+  lv_media   vg_files Cwi-a-C---  6.00t [cachedata_media_cpool]   [lv_media_corig]   0.00   0.05            0.00            
+  lv_private vg_files Cwi-a-C--- <4.92t [cachedata_private_cpool] [lv_private_corig] 0.00   0.05            0.00 
+```
+
+Cache usage, (13 916 × 512 KiB ≈ 6.8 GiB)
+
+```bash
+lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_files
+  LV         CacheMode    CachePolicy CacheTotalBlocks CacheUsedBlocks 
+  lv_media   writethrough smq                   614400            13916
+  lv_private writethrough smq                   614400                0
+```
+
+#### ISCSI
+
+```bash
+pvcreate /dev/mapper/crypt_iscsi /dev/mapper/crypt_cache_iscsi
+```
+
+```bash
+vgcreate vg_iscsi /dev/mapper/crypt_iscsi /dev/mapper/crypt_cache_iscsi
+```
+
+```bash
+lvcreate -L 449G -n lv_iscsi vg_iscsi /dev/mapper/crypt_iscsi
+```
+
+```bash
+lvcreate -L 180G -n cachedata_iscsi vg_iscsi /dev/mapper/crypt_cache_iscsi
+lvcreate -L 12G -n cachemeta_iscsi vg_iscsi /dev/mapper/crypt_cache_iscsi
+```
+
+##### Cache ISCSI
+
+```bash
+lvconvert --type cache-pool --chunksize 256k --poolmetadata vg_iscsi/cachemeta_iscsi vg_iscsi/cachedata_iscsi
+```
+
+```bash
+lvconvert --type cache --cachepool vg_iscsi/cachedata_iscsi --cachemode writeback vg_iscsi/lv_iscsi
+```
+
+Validate
+
+```bash
+lvs -a -o lv_name,segtype,cachemode,devices vg_iscsi
+  
+  LV                            Type       CacheMode Devices                             
+  [cachedata_iscsi_cpool]       cache-pool writeback cachedata_iscsi_cpool_cdata(0)      
+  [cachedata_iscsi_cpool_cdata] linear               /dev/mapper/crypt_cache_iscsi(0)    
+  [cachedata_iscsi_cpool_cmeta] linear               /dev/mapper/crypt_cache_iscsi(46080)
+  lv_iscsi                      cache      writeback lv_iscsi_corig(0)                   
+  [lv_iscsi_corig]              linear               /dev/mapper/crypt_iscsi(0)          
+  [lvol0_pmspare]               linear               /dev/mapper/crypt_iscsi(114944) 
+```
+
+#### Troubleshooting
+
+##### vgcreate - `inconsistent logical block sizes`
+
+Problem is diffrent block size.
+
+```bash
+lsblk -o NAME,TYPE,LOG-SEC,PHY-SEC,MIN-IO,OPT-IO  /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
+
+NAME                 TYPE  LOG-SEC PHY-SEC MIN-IO OPT-IO
+crypt_files          crypt    4096    4096   4096      0
+crypt_cache_files    crypt     512     512    512      0
+```
+
+> [!WARNING]
+>
+> Changing the block size will result in the loss of all data and partitions on the disk.
+
+> [!NOTE]
+>
+> `nvme-cli` needs to be installed
+
+Check supported block size
+
+```bash
+nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
+LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good (in use)
+LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better
+```
+
+Switching to LBA format `1` -> 4096
+
+```bash
+nvme format /dev/nvme0n1 -l 1 --force
+```
+
+Validate change
+
+```bash
+nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
+LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good 
+LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better (in use)
+```
+
+Partitions need to be [recreated](#nvme-cache---prepare-disk)
+
+#### dm-cache with SSD
+
+### BTRFS - File system
+
+## Share files
+
+### Sambda
+
+### DLNA
+
+## ICSCI
+
 ## UPS
 
 ## TODO
 
 - AES-NI ?
+10:00.2 Encryption controller: Advanced Micro Devices, Inc. [AMD] Raven/Raven2/FireFlight/Renoir/Cezanne Platform Security Processor
+
+- pushover
+
+- network onyl 100G
+0d:00.0 Ethernet controller: Aquantia Corp. AQtion AQC107 NBase-T/IEEE 802.3an Ethernet Controller [Atlantic 10G] (rev 02)
+
+- bonnie++
+
+[   10.669637] ee1004 3-0050: probe with driver ee1004 failed with error -5
+https://www.spinics.net/lists/linux-i2c/msg32331.html

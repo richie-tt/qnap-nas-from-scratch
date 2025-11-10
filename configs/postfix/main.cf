@@ -1,0 +1,11 @@
+relay_domains = gmail.com
+relayhost = [smtp.gmail.com]:465
+smtp_tls_wrappermode = yes
+smtp_tls_security_level = encrypt
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
+smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+smtp_use_tls = yes
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
+smtp_tls_policy_maps = lmdb:/etc/postfix/tls_policy
