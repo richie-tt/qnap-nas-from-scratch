@@ -1,20 +1,33 @@
-# Qnap TS-h973AX - NAS server from scratch
+# Qnap TS-h973AX - NAS server from scratch (in progress)
 
-- [Qnap TS-h973AX - NAS server from scratch](#qnap-ts-h973ax---nas-server-from-scratch)
+- [Qnap TS-h973AX - NAS server from scratch (in progress)](#qnap-ts-h973ax---nas-server-from-scratch-in-progress)
   - [Board](#board)
     - [Specification](#specification)
     - [UART](#uart)
-      - [Observation](#observation)
+      - [Investigation](#investigation)
       - [Useful command](#useful-command)
     - [BIOS](#bios)
       - [Boot order](#boot-order)
   - [Arch installation](#arch-installation)
     - [Kernel parameters](#kernel-parameters)
-    - [OS Partition](#os-partition)
+    - [OS disk preparation](#os-disk-preparation)
+      - [Checklist before partitioning](#checklist-before-partitioning)
+      - [Partitions](#partitions)
+        - [Encryption (root)](#encryption-root)
+          - [Recovery password](#recovery-password)
+          - [Binary key file](#binary-key-file)
+          - [TPM \& TANG](#tpm--tang)
+          - [Decrypt luks partition](#decrypt-luks-partition)
+          - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
+        - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
+        - [BTRFS file system](#btrfs-file-system)
+      - [EFI preparing (/boot)](#efi-preparing-boot)
+      - [Mount layout](#mount-layout)
     - [Basic settings, packages, users](#basic-settings-packages-users)
       - [System initialization](#system-initialization)
       - [Locale](#locale)
       - [Users and permission](#users-and-permission)
+      - [Pacman configure](#pacman-configure)
       - [Install basic packages](#install-basic-packages)
       - [Service to enable](#service-to-enable)
       - [Install YAY](#install-yay)
@@ -28,6 +41,7 @@
       - [Propagation dotfile](#propagation-dotfile)
       - [Timezone and date](#timezone-and-date)
       - [Hostname](#hostname)
+      - [Locale (again)](#locale-again)
     - [OS optimization](#os-optimization)
       - [Network](#network)
       - [RAM/IO (cache, inotify)](#ramio-cache-inotify)
@@ -36,7 +50,7 @@
       - [Agetty with UART](#agetty-with-uart)
   - [NAS Server](#nas-server)
     - [Disk Topology](#disk-topology)
-      - [Partitions](#partitions)
+      - [Partitions](#partitions-1)
         - [RAID6 - prepare disk](#raid6---prepare-disk)
         - [RAID1 - prepare disk](#raid1---prepare-disk)
         - [NVMe cache - prepare disk](#nvme-cache---prepare-disk)
@@ -44,6 +58,7 @@
       - [RAID6](#raid6)
       - [RAID1](#raid1)
       - [RAID configuration](#raid-configuration)
+        - [Change the name](#change-the-name)
       - [RAID optimization](#raid-optimization)
       - [RAID Mail notification](#raid-mail-notification)
         - [Postfix](#postfix)
@@ -57,11 +72,16 @@
         - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
       - [dm-cache with SSD](#dm-cache-with-ssd)
     - [BTRFS - File system](#btrfs---file-system)
+      - [Media](#media)
+      - [Private](#private)
   - [Share files](#share-files)
-    - [Sambda](#sambda)
+    - [Samba](#samba)
     - [DLNA](#dlna)
-  - [ICSCI](#icsci)
+    - [Snapshots - snapper](#snapshots---snapper)
+  - [SSD TRIM](#ssd-trim)
+  - [ISCSI](#iscsi-1)
   - [UPS](#ups)
+  - [ACPI custom DSDT](#acpi-custom-dsdt)
   - [TODO](#todo)
 
 ## Board
@@ -76,13 +96,14 @@ Specification:
 - RAM - max 64GB DDR4 SO-DIMM
 - Drive Bays - 9 bays
   - 5 x 3.5" SATA 6 Gb/s
-  - 4 x 2.5" SATA 6 Gb/s/U.2 NVMe PCIe Gen 3 x4
-  - 1x USB-DOM 4G internal contain `QuTS hero` OS
+  - 2 x 2.5" SATA 6 Gb/s / U.2 NVMe PCIe Gen 3 x4
+  - 2 x 2.5" SATA 6 Gb/s
+  - 1x USB-DOM 4G internal contain [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero) OS
 - Network - 3 ports
   - 1x 10GBase
   - 2x 2.5GBase
 - USB
-  - 1x UCB-C 3.2 Gen 2 10Gb/s
+  - 1x USB-C 3.2 Gen 2 10Gb/s back
   - 2x USB-A 3.2 Gen 2 back
   - 1x USB-A 3.2 Gen 2 front
 
@@ -118,12 +139,11 @@ You can use any UART terminal, for example, `picocom`
 picocom -b 115200 -f n /dev/ttyUSB0
 ```
 
-> [!IMPORTANT]
-> I've spent many hours trying to understand why `UART` works unstable and quickly hangs for never distribution like [Debian](https://www.debian.org), [Arch Linux](https://archlinux.org), [TrueNAS](https://www.truenas.com), but works stable during [POST messages](https://en.wikipedia.org/wiki/Power-on_self-test), [BIOS interaction](https://www.techtarget.com/whatis/definition/BIOS-basic-input-output-system) and **all the time** for [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero).
+#### Investigation
 
-#### Observation
+I've spent many hours trying to understand why `UART` works unstable and quickly hangs for never distribution like [Debian](https://www.debian.org), [Arch Linux](https://archlinux.org), [TrueNAS](https://www.truenas.com), but works stable during [POST messages](https://en.wikipedia.org/wiki/Power-on_self-test), [BIOS interaction](https://www.techtarget.com/whatis/definition/BIOS-basic-input-output-system) and **all the time** for [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero).
 
-- QuTS hero has an additional command in the [DSDT](https://wiki.archlinux.org/title/DSDT) table for ACPI that allows reconfiguring the UART (`UAR1`, `UAR2`) via an ACPI call, but after trying to change the configuration it refused to turn on.
+- QuTS hero has an additional command in the [DSDT](https://wiki.archlinux.org/title/DSDT) table for ACPI that allows reconfiguring the UART (`UAR1`, `UAR2`) via an [ACPI calls](https://github.com/mkottman/acpi_call), but after trying to change the configuration it refused to turn on.
 
 ```bash
 '\_SB.PCI0.UAR1._STA' - _STA: Port Status
@@ -136,7 +156,7 @@ picocom -b 115200 -f n /dev/ttyUSB0
 
 - After Linux boots, with dedicated [Kernel parameters](#kernel-parameters), the **bidirectional UART communication** is still a big problem. It doesn't matter if software flow control is used; the UART will quickly hang after interaction, when port is freezing, there is not possible to communicate with it, change settings, or even send echo to port `echo "test" > /dev/ttyS0`.
 
-  There is a trick to unfreeze the port for a few seconds, just call this command `cat /proc/tty/driver/serial`
+  There is a trick to unfreeze the port for a few seconds, just call this command  `cat /proc/tty/driver/serial`
 
   ```bash
   $ cat /proc/tty/driver/serial
@@ -146,7 +166,7 @@ picocom -b 115200 -f n /dev/ttyUSB0
   1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
   ```
 
-  For now, I discovered that switching the port from [IRQ](https://en.wikipedia.org/wiki/Interrupt_request) to [polling mode](https://en.wikipedia.org/wiki/Polling_(computer_science)) makes the UART stable for bidirectional communication
+  For now, I discovered that switching the port from [IRQ](https://en.wikipedia.org/wiki/Interrupt_request) to [polling mode](https://en.wikipedia.org/wiki/Polling_(computer_science)) makes the UART stable for bidirectional communication, the disadvantage of polling mode is that the port slows down, but at least it is working.
 
   ```bash
   $ cat /proc/tty/driver/serial
@@ -166,7 +186,9 @@ picocom -b 115200 -f n /dev/ttyUSB0
 - `echo on | sudo tee /sys/class/tty/ttyS0/device/power/control` - disable automatic power suspension
 - `/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0` - port using polling
 - `/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 4` - port using IRQ
-- `udevadm info -a -n /dev/ttyS0 | grep -E 'DRIVER|DEVPATH|SUBSYSTEM` - information about driver hierarchy
+- `udevadm info -a -n /dev/ttyS0 | grep -E 'DRIVER|DEVPATH|SUBSYSTEM` - information about driver hierarchy under udev
+- `stty -F /dev/ttyS0 -a` - UART configuration
+- `lspci -k` - basic information about devices and drivers/modules
 
 > [!NOTE]
 > `setserial` can be installed from [AUR](https://aur.archlinux.org/packages/setserial)
@@ -181,7 +203,7 @@ BIOS Date: 07/21/2021 18:24:22 Ver: Q071AR10
 Press <DEL> or <ESC> to enter setup.
 ```
 
-From interesting changes, are:
+Useful BIOS settings:
 
 - turn off the `BIOS Beep Function` - no more noise beep
 - adapt the `Restore AC Power Loss` - this also can be changed from [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero)
@@ -229,56 +251,55 @@ From interesting changes, are:
 
 There are two possibilities to make the boot work:
 
-1. Use internal USB-DOM as an EFI partition, which will allow booting the operating system from the SATA drive.
+1. Use internal USB-DOM as an [EFI partition](https://en.wikipedia.org/wiki/EFI_system_partition), which will allow booting the operating system from the SATA drive.
 
    ```bash
+   +-----------+      +-------------------------------+
+   |           |      |                               |
+   |  EFI      |      |        Root partition         |
+   | Partition |      |                               |
+   |           |      |                               |
    +-----------+      +-------------------------------+
    |  USB DOM  |      |            HDD                |
    |   (EFI)   |      |         (OS DATA)             |
    +-----------+      +-------------------------------+
-   |           |      |                               |
-   |  EFI      |      |         Linux OS              |
-   | Partition |      |                               |
-   |           |      |                               |
-   +-----------+      +-------------------------------+
    ```
 
-   - __USB DOM__: Small USB device used to host the EFI partition
-   - __HDD__: Main disk storage for the operating system
+   - **USB DOM** - Small USB device used to keep the EFI partition
+   - **HDD** - SATA disk used for the operating system
 
-   This configuration does not require any interaction with the `BOOT Option`, because the USB-DOM can be connected to another computer and prepared accordingly, and QNAP will still try to read the EFI partitions from the USB-DOM.
+   This configuration does not require any interaction with the `BOOT Option`, because the USB-DOM can be connected to another computer and prepared accordingly, and QNAP board will still try to read the EFI partitions from the USB-DOM.
 
    I used such adapter
 
    <img src="assets/usb-dom-adapter.png" alt="drawing" width="452"/><img src="assets/usb-dom.png" alt="drawing" width="500"/>
 
-> [!WARNING]
-> Remember to make a copy of the USB-DOM memory.  
-> Command `dd if=/dev/sda of=./qnap.img`
+   Remember to make a copy of the USB-DOM memory. Command `dd if=/dev/sda of=./qnap.img`
 
-1. Using the [QNAP U.2 NVMe adapter](https://eustore.qnap.com/qda-ump4.html) with an NVMe drive. Thanks to a dedicated interface on the TS-h973AX motherboard, the NVMe drive is available as a boot option and operates at full speed.
+2. The TS-h973AX motherboard has two SATA/U.2 bay slots, which allow to use of the [QNAP U.2 NVMe adapter](https://eustore.qnap.com/qda-ump4.html) with an NVMe drive. Such an adapter gives the possibility to use NVMe at full speed and make it available as a boot option.
 
    This configuration requires interaction with the `BOOT Option`, and using an NVMe drive as a boot drive, but the speed gain is significant.
 
    ```bash
    +-------------------------------+
-   |           NVMe SSD            |
-   |            1 disk             |
-   +-----------+-------------------+
    |           |                   |
    |   EFI     |      Linus OS     |
    | Partition |                   |
    |           |                   |
    +-------------------------------+
+   |           NVMe SSD            |
+   |            1 disk             |
+   +-----------+-------------------+
    ```
 
-   __NVMe SSD__: Single NVMe disk for both `EFI` and `root`
+   **NVMe SSD**: Single NVMe disk for both `EFI` and `root`
 
 > [!IMPORTANT]
-> A standard NVMe-to-SATA adapter won't detect this drive as NVMe because it only uses the SATA interface for data transfer. Use a U.2 NVMe adapter with an SFF-8639 connector.  
-> To learn more about the QNAP adapter's design, see the images below.
+> A standard NVMe-to-SATA adapter won't detect this drive as NVMe because it only uses the SATA interface for data transfer. Use a U.2 NVMe adapter with an SFF-8639 connector. To learn more about the QNAP adapter's design, see the images below.
 >
-> <img src="assets/adapter1.png" alt="drawing" width="622"/><img src="assets/adapter2.png" alt="drawing" width="700"/>
+> <img src="assets/interface.png" alt="drawing" width="800"/>  
+> <img src="assets/adapter1.png" alt="drawing" width="622"/>  
+> <img src="assets/adapter2.png" alt="drawing" width="700"/>  
 
 ## Arch installation
 
@@ -311,29 +332,396 @@ ssh root@192.168.1.123
 
 ### Kernel parameters
 
-The following kernel parameters ensure stable UART operation __ONLY__ when receiving logs (one-way communication). __The order of the parameters is important.__
+The following kernel parameters stabilize the UART **ONLY** when receiving logs (one-way communication), which allows you to observe the entire boot process.**The order of the parameters is important.**
+
+Optimized, which working well
 
 ```bash
-earlycon=uart8250,io,0x3f8,115200 console=ttyS0,115200n8 console=tty0 loglevel=6 no_console_suspend 8250.nr_uarts=1 8250.share_irqs=1 8250.skip_tx_test=1 8250.autoflow=0
+console=ttyS0,115200n8 \
+  console=tty0 \
+  loglevel=6 \
+  8250.nr_uarts=2 \
+  8250.skip_txen_test=1
 ```
 
-> [!NOTE]
-> Needs to be reviewed again
+For debug purpose, useful for other Linux distribution
 
-### OS Partition
+```diff
++earlycon=uart8250,io,0x3f8,115200 \
+  console=ttyS0,115200n8 \
+  console=tty0 \
+  loglevel=6 \
++ no_console_suspend \
+  8250.nr_uarts=2 \
++ 8250.share_irqs=1 \
+  8250.skip_txen_test=1
+```
 
-Partitioning depends on the approach you choose, with or without a USB DOM (see [Boot Order](#boot-order) for more information). This guide uses a single NVMe drive for the entire system (without a USB DOM).
+- `earlycon=uart8250,io,0x3f8,115200` - enables an early console on a legacy 8250 UART at I/O port `0x3f8`, `115200 bps`. This prints very-early kernel messages before the full TTY/driver stack is up. It’s simple, polled I/O—no interrupts, no [termios](https://en.wikibooks.org/wiki/Serial_Programming/termios), no flow control—meant purely for early boot logs.
+
+- `console=ttyS0,115200n8` - adds a regular kernel console on `/dev/ttyS0` at `115200`, `8 data bits`, `no parity`, `1 stop bit`
+  - Adding `r` to the end -> `ttyS0,115200n8` is enabling hardware [RTS/CTS](https://en.wikipedia.org/wiki/RS-232#RTS,_CTS,_and_RTR)  
+  - [XON/XOFF](https://en.wikipedia.org/wiki/Software_flow_control) belongs to termios/user space, not the kernel console
+
+- `console=tty0` - adds a console to the current virtual terminal (VGA). The last `console=` wins in the case of a `/dev/console` connection and becomes **primary**. This is a workaround for an unstable UART, which, if made primary, can freeze the entire boot process.
+
+- `loglevel=6` - sets the console logging level to `INFO` (range is 0=emerg -> 7=debug).
+
+- `8250.nr_uarts=2` - limit the driver to register at most 2 UART, this reduces probing/registration to a single port.
+
+- `8250.share_irqs=1` - allow the 8250 driver to share IRQs with other devices.
+
+- `8250.skip_txen_test=1` - it skips the “TX enable” sanity test used for some quirky UARTs during init.
+
+### OS disk preparation
+
+Partitioning depends on the approach you choose, with or without a USB DOM (check [Boot Order](#boot-order) for more information). This guide uses a single NVMe drive for the entire system (without a USB DOM) with encryption, LVM and BTRFS as file system.
 
 ```bash
-+-------------------------------+
-|           NVMe SSD            |
-|            1 disk             |
-+-----------+-------------------+
-|           |                   |
-|   EFI     |      Linus OS     |
-| Partition |                   |
-|           |                   |
-+-------------------------------+
++-----------------+-------------------+
+|                 |                   |
+|  EFI Partition  |  Root partition   |
+|     (VFAT)      |     (BTRFS)       |
+|                 |                   |
+|                 +-------------------+
+|                 |                   |
+|                 |       LVM         |
+|                 |                   |
+|                 +-------------------+
+|                 |                   |
+|                 |    cryptsetup     |
+|                 |                   |
++-----------------+-------------------+
+|               NVMe SSD              |
+|                1 disk               |
++-------------------------------------+
+```
+
+#### Checklist before partitioning
+
+Typically, NVMe drives use a smaller block size of `512B`, which is slower than `4096B`.
+
+> [!WARNING]
+>
+> Changing the block size will result in the loss of all data and partitions on the disk.
+
+Install `nvme-cli` from [aur](https://aur.archlinux.org/packages/nvme-cli-git), and after that, you can check the supported block sizes:
+
+```bash
+$ nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
+
+LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good (in use)
+LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better
+```
+
+`512 bytes` is in use, let's change the LBA format to `4096 bytes` -> `1`
+
+```bash
+nvme format /dev/nvme0n1 -l 1 --force
+```
+
+Validate change, if `4096 bytes` is in use
+
+```bash
+$ nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
+
+LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good 
+LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better (in use)
+```
+
+#### Partitions
+
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- EFI parition needs to use correct type `EFI System`
+- OS parition should be `Linux filesystem`
+
+```bash
+$ fdisk /dev/nvme0n1 -l
+
+Disk /dev/nvme0n1: 465.76 GiB, 500107862016 bytes, 976773168 sectors
+Disk model: KINGSTON SNV3S500G                      
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: gpt
+Disk identifier: 5A741586-4E80-4CEF-A117-C69E2850E569
+
+Device           Start       End   Sectors   Size Type
+/dev/nvme0n1p1    2048   2099199   2097152     1G EFI System
+/dev/nvme0n1p2 2099200 976773119 974673920 464.8G Linux filesystem
+```
+
+##### Encryption (root)
+
+I realize that entering a password every time the NAS server boots can be inconvenient, even though the TS-h973AX board doesn't have a video card can be more difficult, but an unencrypted root partition where RAID passwords are stored also poses a serious security risk.
+
+After trying different methods and taking into account the limitations (no graphics card), I decided to use [TPM](https://wiki.archlinux.org/title/Trusted_Platform_Module) + [TANG](https://github.com/latchset/tang) as a required condition to automatically unlock the encrypted root partition.
+
+> [!TIP]
+> How to configure a [TANG server](https://man.archlinux.org/man/tang.8.en). It is important to understand how it works and how to restore the `jwk` files required for disaster recovery. Back up your `jwk` files !!!
+
+Required packages
+
+```bash
+pacman -S clevis jose tpm2-tools
+```
+
+Encryption performance depends on the hardware features supported, so a benchmark is important. [check this guide](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption)
+
+```bash
+cryptsetup benchmark 
+
+# Tests are approximate using memory only (no storage IO).
+PBKDF2-sha1      1072163 iterations per second for 256-bit key
+PBKDF2-sha256    2076388 iterations per second for 256-bit key
+PBKDF2-sha512     688946 iterations per second for 256-bit key
+PBKDF2-ripemd160  386643 iterations per second for 256-bit key
+PBKDF2-whirlpool  274784 iterations per second for 256-bit key
+argon2i       4 iterations, 924844 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
+argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
+#     Algorithm |       Key |      Encryption |      Decryption
+        aes-cbc        128b       446.3 MiB/s       898.6 MiB/s
+    serpent-cbc        128b        46.7 MiB/s       157.0 MiB/s
+    twofish-cbc        128b        88.4 MiB/s       159.4 MiB/s
+        aes-cbc        256b       349.6 MiB/s       853.7 MiB/s
+    serpent-cbc        256b        46.7 MiB/s       157.0 MiB/s
+    twofish-cbc        256b        88.4 MiB/s       159.4 MiB/s
+        aes-xts        256b      1054.6 MiB/s      1054.1 MiB/s
+    serpent-xts        256b       145.4 MiB/s       145.5 MiB/s
+    twofish-xts        256b       148.0 MiB/s       147.7 MiB/s
+        aes-xts        512b       951.1 MiB/s       950.5 MiB/s
+    serpent-xts        512b       145.4 MiB/s       145.5 MiB/s
+    twofish-xts        512b       144.4 MiB/s       147.6 MiB/s
+```
+
+###### Recovery password
+
+During encryption, `cryptsetup` asks for a static password. Create a strong password, as this will be the recovery password. This password will be stored in slot `0`.
+
+```bash
+cryptsetup luksFormat /dev/nvme0n1p2 -c aes-xts-plain64 -s 256 -h sha512
+```
+
+###### Binary key file
+
+A binary key file is one option for unlocking a partition. I recommend using it as a backup on a USB drive. It can be helpful when you need to decrypt the main partition when the TPM + TANG method doesn't work.
+
+Generate a binary key file, which can be stored on USB drive or NFS endpoint
+
+```bash
+dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin ./root.key
+```
+
+Add key file to Luks on slot `1`
+
+```bash
+cryptsetup luksAddKey /dev/nvme0n1p2 -S 1 root.key -h sha512
+```
+
+> [!TIP]
+> Read this guide, about the [binary key file](https://wiki.archlinux.org/title/Dm-crypt/System_configuration#rd.luks.key)
+
+Add following kernel parameter
+
+- `rd.luks.key=XXXXXXXX=/path/to/keyfile:UUID=ZZZZZZZZ`, where `XXXXXXXX` is the UUID encrypted partition and `ZZZZZZZZ` is the UUID of partition where key is located.
+
+- `rd.luks.options=XXXXXXXX=keyfile-timeout=10s`- without this options, Kernel will wait forever for binary key.
+
+Instead of adding another kernel parameter, there is possibility to add this settings to `/etc/crypttab.initramfs` which during recreating of initramfs `mkinitcpio -P` will be included to initramfs-linux.img.
+
+```conf
+# /etc/crypttab.initramfs
+
+luks_root    UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX   /root.key:UUID=ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ   luks,keyfile-timeout=10s
+```
+
+###### TPM & TANG
+
+Validate if TPM is working, in case of issue check this [guide](https://wiki.archlinux.org/title/Trusted_Platform_Module)
+
+```bash
+tpm2_pcrread sha256:7
+  sha256:
+    7 : 0x46R2AO92OXMV4QMJJNDXITEP33BR3FZXGVU01VC0B6XY8LIGEC51K8M00SCJ4DCJM
+```
+
+Check if TANG is accessible, in this scenario TANG server is exposed on `7500` port
+
+```bash
+curl http://tang.example.com:7500/adv
+```
+
+Read how the `clevis` condition [works](https://github.com/latchset/clevis?tab=readme-ov-file#pin-shamir-secret-sharing)
+
+```bash
+clevis luks bind -d /dev/nvme0n1p2 sss \
+  '{"t":2,"pins":{
+      "tpm2":{"pcr_ids":"7"},
+      "tang":{"url":"http://tang.example.com:7500"}
+    }}'
+```
+
+Validate if new key was added
+
+```bash
+cryptsetup luksDump /dev/nvme0n1p2 
+```
+
+```diff
+...
++Keyslots:
++  2: luks2
++       Key:        256 bits
++       Priority:   normal
++       Cipher:     aes-xts-plain64
++       Cipher key: 256 bits
++       PBKDF:      pbkdf2
++       Hash:       sha256
++       Iterations: 1000
+...
+Tokens:
+  0: systemd-recovery
+        Keyslot:    0
++ 1: clevis
++       Keyslot:    2
+...
+```
+
+###### Decrypt luks partition
+
+It's required to progress with the next steps, like LVM, BTRFS, etc.
+
+```bash
+cryptsetup open /dev/nvme0n1p2 luks_root
+ ```
+
+###### Use dedicate AMD Encryption controller
+
+AMD Encryption controller is detect  but Kernel report some issue.
+
+```bash
+10:00.2 Encryption controller: Advanced Micro Devices, Inc. [AMD] Raven/Raven2/FireFlight/Renoir/Cezanne Platform Security Processor
+```
+
+```bash
+ccp 0000:10:00.2: ccp enabled
+ccp 0000:10:00.2: psp: unable to access the device: you might be running a broken BIOS.
+```
+
+> [!CAUTION]
+> Require investigation
+
+##### Logical Volume Manager (LVM)
+
+> [!TIP]
+> Read this [guide](https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system) about LVM to understand all the following command and their consequences.
+
+```bash
+pvcreate /dev/mapper/luks_root
+```
+
+```bash
+vgcreate vg_root /dev/mapper/luks_root
+```
+
+```bash
+lvcreate -L 250G vg_root -n lv_root
+```
+
+##### BTRFS file system
+
+> [!TIP]
+> Read this [guide](https://wiki.archlinux.org/title/Btrfs) about BTRFS to understand all the following command and their consequences.
+
+In this configuration, subvolumes will be used for the following endpoints:
+
+- `@` - `/` (root)
+- `@home` - `/home`
+- `@var_cache` - `/var/cache`
+
+Format partition with `root` label
+
+```bash
+mkfs.btrfs -L root /dev/vg_root/lv_root
+```
+
+Mount the partition to create subvolumes
+
+```bash
+mount /dev/vg_root/lv_root /mnt
+```
+
+Create subvolume
+
+```bash
+btrfs subvolume create /mnt/@
+btrfs subvolume create /mnt/@home
+btrfs subvolume create /mnt/@var_cache
+```
+
+List all subvolumes
+
+```bash
+$ btrfs subvolume list -p /mnt
+
+ID 256 gen 10 parent 5 top level 5 path @
+ID 257 gen 10 parent 5 top level 5 path @home
+ID 259 gen 11 parent 5 top level 5 path @var_cache
+```
+
+Make subvolume `@` as default
+
+```bash
+btrfs subvolume set-default 256 /mnt
+```
+
+Check default subvolume
+
+```bash
+btrfs subvolume get-default /mnt
+```
+
+#### EFI preparing (/boot)
+
+TODO: Add description
+
+```bash
+mkfs.vfat -F 32 /dev/nvme0n1p1
+```
+
+#### Mount layout
+
+Make following folders
+
+```bash
+mkdir /mnt/home 
+
+mkdir -p /mnt/var/cache
+
+mkdir /mnt/boot         
+
+```
+
+> [!IMPORTANT]
+> Umount root partition, to use subvolumes
+>
+> ```bash
+> umount /mnt
+> ```
+
+> [!TIP]
+> Read this [doc](https://btrfs.readthedocs.io/en/latest/ch-mount-options.html), to understand BTRFS mount options.
+
+```bash
+mount -o subvol=@,relatime,lazytime,autodefrag /dev/vg_root/lv_root /mnt
+
+mount -o subvol=@home,relatime,lazytime,autodefrag /dev/vg_root/lv_root /mnt/home
+
+mount -o subvol=@var_cache,compress=zstd:3,relatime,lazytime /dev/vg_root/lv_root /mnt/var/cache
+
+mount /dev/nvme0n1p1 /mnt/boot
 ```
 
 ### Basic settings, packages, users
@@ -342,15 +730,49 @@ Partitioning depends on the approach you choose, with or without a USB DOM (see 
 
 Requires all system partitions to be properly mounted on `/mnt`, check the visualization of the mount point layout
 
-```text
-/mnt        (root partition)
-├── boot    (EFI under /mnt/boot)
-└── home    (user data /mnt/home)
+Check mount layout
+
+```bash
+$ lsblk
+
+nvme0n1               259:0    0 465.8G  0 disk  
+├─nvme0n1p1           259:1    0     1G  0 part  /mnt/boot
+└─nvme0n1p2           259:2    0 464.8G  0 part  
+  └─luks_root         253:0    0 464.7G  0 crypt 
+    └─vg_root-lv_root 253:1    0   250G  0 lvm   /mnt/var/cache
+                                                 /mnt/home
+                                                 /mnt
 ```
 
 ```bash
 pacstrap /mnt amd-ucode base base-devel bash-completion \
   linux linux-headers linux-firmware openssh vim btrfs-progs
+```
+
+During creation of initramfs, may occur some problems, all will be fixed in later steps
+
+```bash
+==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
+==> Using default configuration file: '/etc/mkinitcpio.conf'
+  -> -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
+==> Starting build: '6.17.8-arch1-1'
+  -> Running build hook: [base]
+  -> Running build hook: [systemd]
+  -> Running build hook: [autodetect]
+  -> Running build hook: [microcode]
+  -> Running build hook: [modconf]
+  -> Running build hook: [kms]
+  -> Running build hook: [keyboard]
+  -> Running build hook: [keymap]
+  -> Running build hook: [sd-vconsole]
+==> ERROR: file not found: '/etc/vconsole.conf'
+  -> Running build hook: [block]
+  -> Running build hook: [filesystems]
+  -> Running build hook: [fsck]
+==> Generating module dependencies
+==> Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
+==> WARNING: errors were encountered during the build. The image may not be complete.
+error: command failed to execute correctly
 ```
 
 Remember to generate `fstab`
@@ -370,8 +792,8 @@ arch-chroot /mnt
 Set locale
 
 ```bash
-echo "en_US.UTF-8 UTF-8" >  /etc/locale-gen
-echo "pl_PL.UTF-8 UTF-8" >> /etc/locale-gen
+echo "en_US.UTF-8 UTF-8" >  /etc/locale.gen
+echo "pl_PL.UTF-8 UTF-8" >> /etc/locale.gen
 
 locale-gen
 ```
@@ -414,37 +836,61 @@ Modify `/etc/sudoers` via `visudo` command
 ...
 ```
 
+#### Pacman configure
+
+```diff
+...
+-#Color
++Color
+...
+-#[multilib]
+-#Include = /etc/pacman.d/mirrorlist
++[multilib]
++Include = /etc/pacman.d/mirrorlist
+...
+```
+
 #### Install basic packages
 
 ```bash
 pacman -Syy && \
-pacman -S acpi acpid acpi_call-dkms \
+pacman -S acpi \
+  acpi_call \
+  acpid \
+  clevis \
   dmidecode \
   git \
   go \
   htop \
   iotop \
   lm_sensors \
+  lsof \
+  lvm2 \
   mdadm \
   minidlna \
   nvme-cli \
   samba \
   smartmontools \
   snapper \
+  strace \
   sysstat \
-  zsh \
   systemd-resolvconf \
+  tpm2-tools \
+  zsh \
   zsh-autosuggestions \
   zsh-history-substring-search \
   zsh-syntax-highlighting
 ```
+
+> [!TIP]
+> `acpi_call` should be replaced with  `acpi_call-dkms` if used LTS or different Kernel images
 
 #### Service to enable
 
 ```bash
 systemctl enable acpid
 systemctl enable sshd
-systemctl enable systemd-network
+systemctl enable systemd-networkd
 systemctl enable systemd-resolved
 ```
 
@@ -455,45 +901,74 @@ Remember to to switch to regular user `my_user`
 ```bash
 git clone https://aur.archlinux.org/yay.git
 cd yay
-makepkg -is
+makepkg -si
 ```
 
 #### AUR packages
 
 ```bash
-yay -S setserial \
-  fzf-marks \
+yay -S fzf-marks \
+  mkinitcpio-systemd-extras \
+  # mkinitcpio-systemd-root-password \
+  setserial \
   ttf-meslo-nerd-font-powerlevel10k \
   zsh-theme-powerlevel10k-git
 ```
 
 #### Configure network
 
+> [!TIP]
+> Read this [guide](https://www.freedesktop.org/software/systemd/man/latest/systemd.network.html) about network configuration via `systemd-networkd`.
+
 ```conf
 # /etc/systemd/network/10-nic.network 
 
-# Enable DHCPv4 and DHCPv6 on all physical ethernet links
+# Enable DHCPv4 on all physical ethernet links
 [Match]
 Kind=!*
 Type=ether
 
 [Network]
-DHCP=yes
+DHCP=ipv4
+LLDP=true
+EmitLLDP=yes
+
+[DHCPv4]
+ClientIdentifier=mac
+UseNTP=true
 ```
 
 #### Initramfs image
 
-If you use a `BTRFS` as files system, is good to add `btrfs` module
+Package `mkinitcpio-systemd-extras` will delivery all necessary hooks [sd-clevis](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Clevis), [sd-network](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Networking), [sd-resolve](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Name-Resolution) require auto-unlock root partition via network, please read documentation careful.
+
+Modules:
+
+`atlantic` - driver for 10G ethernet
+`igc` - driver for 2.5G ethernet
+`vfat` - driver to access `boot` partition during boot
 
 ```conf
 # /etc/mkinitcpio.conf
 
 ...
-MODULES=(vfat)
+MODULES=(atlantic igc ethernet)
 ...
 
-BINARIES=(btrfs)
+HOOKS=(base systemd btrfs autodetect microcode modconf kms keyboard sd-vconsole block mdadm_udev sd-network sd-resolve block sd-clevis sd-encrypt lvm2 filesystems fsck)
 ```
+
+- `btrfs` - adding all BTRFS modules, which can be helpful to fix root partition
+- `mdadm_udev` - provide support for assembling RAID arrays via udev
+- `sd-network` - adding support for network
+- `sd-resolve` - adding support for resolving DNS names
+- `sd-clevis` - adding support for clevis
+- `lvm2` - Adds the device mapper kernel module and the lvm tool to the image.
+
+> [!CAUTION]
+> `sd-resolve` require to create `/etc/hostname`
+>
+> Remember to recreate initramfs `mkinitcpio -p linux`
 
 #### UEFI boot manager
 
@@ -512,7 +987,7 @@ title Arch
 linux /vmlinuz-linux
 initrd /initramfs-linux.img
 initrd /amd-ucode.img
-options root=UUID=8398cd78-1111-2222-3333-f880264aa816 rw mitigations=auto audit=0 earlycon=uart8250,io,0x3f8,115200 console=ttyS0,115200n8 console=tty0 loglevel=6 no_console_suspend 8250.nr_uarts=1 8250.share_irqs=1 8250.skip_tx_test=1 8250.autoflow=0
+options options rd.neednet=1 rd.luks.uuid=7f0cc063-e383-4244-b4cb-12e6c396947f root=UUID=e0ff3e81-a516-4dbf-8103-8503655db764 rw mitigations=off audit=auto console=ttyS0,115200n8 console=tty0 loglevel=6 8250.nr_uarts=2 8250.skip_txen_test=1  
 ```
 
 > [!WARNING]
@@ -524,12 +999,21 @@ options root=UUID=8398cd78-1111-2222-3333-f880264aa816 rw mitigations=auto audit
 
 #### Resolver
 
+Check if `resolv.conf` is a symnlink
+
+```bash
+ls -la /etc/resolv.conf 
+lrwxrwxrwx 1 root root 37 Nov 24 09:33 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
+```
+
+if not fix it with following command 
+
 ```bash
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 ```
 
 ```conf
-#  /etc/resolv.conf
+#  /etc/systemd/resolved.conf
 
 [Resolve]
 
@@ -550,7 +1034,7 @@ systemctl restart systemd-resolved
 To propagate file configuration for each new user, add file to `/etc/skel`
 
 ```bash
-cp .vim /etc/skel
+cp .vimrc /etc/skel
 ```
 
 ```bash
@@ -573,10 +1057,48 @@ timedatectl set-timezone Europe/Warsaw
 timedatectl set-ntp true
 ```
 
+Validate
+
+```bash
+$ timedatectl timesync-status 
+
+
+       Server: 89.250.197.242 (89.250.197.242)
+Poll interval: 1min 4s (min: 32s; max 34min 8s)
+         Leap: normal
+      Version: 4
+      Stratum: 4
+    Reference: A29FC87B
+    Precision: 1us (-20)
+Root distance: 69.884ms (max: 5s)
+       Offset: +3.568ms
+        Delay: 568us
+       Jitter: 1.348ms
+ Packet count: 2
+    Frequency: +0.000ppm
+```
+
 #### Hostname
 
 ```bash
 hostnamectl hostname qnap
+```
+
+#### Locale (again)
+
+Executing this command one again, will recreate `/etc/vconsole.conf` file
+
+```bash
+localectl set-keymap pl2
+```
+
+```conf
+# /etc/vconsole.conf
+
+KEYMAP=pl2
+XKBLAYOUT=pl
+XKBMODEL=pc105
+XKBOPTIONS=terminate:ctrl_alt_bksp
 ```
 
 ### OS optimization
@@ -678,7 +1200,7 @@ dev.raid.speed_limit_max = 800000
 
 ### UART fix
 
-In the [Board/UART](#boot-order) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data, switches to polling mode (timer-controlled) the UART operation is slower but stable.
+In the [Board/UART](#uart) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data, switches to polling mode (timer-controlled) the UART operation is slower but stable.
 
 Manually step validation
 
@@ -728,29 +1250,7 @@ ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyS0", ATTR{device/power/control}="on
 
 #### Agetty with UART
 
-```bash
-systemctl edit serial-getty@ttyS0.service
-```
-
-```diff
-### Editing /etc/systemd/system/serial-getty@ttyS0.service.d/override.conf
-### Anything between here and the comment below will become the contents of the drop-in file
-
-+[Service]
-+ExecStart=
-+ExecStart=-/sbin/agetty -o '-p -- \\u' -8 -L -t 0 -I $'\x11' 115200 %I vt102
-+Restart=always
-
-### Edits below this comment will be discarded
-```
-
-```bash
-systemctl enable serial-getty@ttyS0.service
-```
-
-```bash
-systemctl daemon-reload
-```
+After switching UART to polling mode, agetty is working correctly, no needs to modify service.
 
 ## NAS Server
 
@@ -765,7 +1265,7 @@ RAID6 mdadm - 5x4TB HDD
             └─ lv_media → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
 
 
-# ISCSI — dedicated aray for ISCSI with cache
+# ISCSI — dedicated array for ISCSI with cache
 RAID1 mdadm - 2x500G HDD
   └─ cryptsetup - encrypt whole space
        └─ Luks2 - PV: crypt_iscsi + crypt_cache_iscsi
@@ -869,7 +1369,7 @@ mdadm --create /dev/md0 --level=1 \
 Add the RAID map to `/etc/mdadm.conf`
 
 ```bash
-sudo mdadm --detail --scan | sudo tee /etc/mdadm.conf
+mdadm --detail --scan | tee /etc/mdadm.conf
 ```
 
 which should give the following results
@@ -895,6 +1395,18 @@ md0 : active raid6 sde1[2] sdd1[1] sdf1[3] sdc1[0] sdg1[4]
       bitmap: 0/30 pages [0KB], 65536KB chunk
 
 unused devices: <none>
+```
+
+##### Change the name
+
+If the array already exists, it will be automatically created with invalid names. To fix this, follow these steps.
+
+```bash
+mdadm --stop /dev/md127
+```
+
+```bash
+mdadm --assemble --update=name --name=iscsi /dev/md1 /dev/sda1 /dev/sdb1
 ```
 
 #### RAID optimization
@@ -973,12 +1485,12 @@ pacman -S postfix cyrus-sasl s-nail
 Configuration
 
 ```conf
-# /etc/postfix/main.cf'
+# /etc/postfix/main.cf
 
 relayhost = [smtp.gmail.com]:587
 smtp_use_tls = yes
 smtp_sasl_auth_enable = yes
-smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
 smtp_sasl_security_options = noanonymous
 smtp_sasl_tls_security_options = noanonymous
 ```
@@ -1009,6 +1521,7 @@ Restart service and check the status
 
 ```bash
 systemctl restart postfix.service
+systemctl enable postfix.service
 ```
 
 Test mail
@@ -1027,50 +1540,16 @@ echo "This is the body of an encrypted email" | mail -s "This is the subject lin
 
 ### dm-crypt
 
-Encryption performance depends on the hardware features supported, so benchamrk is important. [check this guide](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption)
-
-```bash
-cryptsetup benchmark 
-
-# Tests are approximate using memory only (no storage IO).
-PBKDF2-sha1      1072163 iterations per second for 256-bit key
-PBKDF2-sha256    2076388 iterations per second for 256-bit key
-PBKDF2-sha512     688946 iterations per second for 256-bit key
-PBKDF2-ripemd160  386643 iterations per second for 256-bit key
-PBKDF2-whirlpool  274784 iterations per second for 256-bit key
-argon2i       4 iterations, 924844 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
-argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
-#     Algorithm |       Key |      Encryption |      Decryption
-        aes-cbc        128b       446.3 MiB/s       898.6 MiB/s
-    serpent-cbc        128b        46.7 MiB/s       157.0 MiB/s
-    twofish-cbc        128b        88.4 MiB/s       159.4 MiB/s
-        aes-cbc        256b       349.6 MiB/s       853.7 MiB/s
-    serpent-cbc        256b        46.7 MiB/s       157.0 MiB/s
-    twofish-cbc        256b        88.4 MiB/s       159.4 MiB/s
-        aes-xts        256b      1054.6 MiB/s      1054.1 MiB/s
-    serpent-xts        256b       145.4 MiB/s       145.5 MiB/s
-    twofish-xts        256b       148.0 MiB/s       147.7 MiB/s
-        aes-xts        512b       951.1 MiB/s       950.5 MiB/s
-    serpent-xts        512b       145.4 MiB/s       145.5 MiB/s
-    twofish-xts        512b       144.4 MiB/s       147.6 MiB/s
-```
+> [!TIP]
+> Before taking any action, please read the encryption description in [description](#encryption-root).
 
 Encrypt RAID6, RAID1, and both cache partitions
 
 ```bash
-cryptsetup luksFormat /dev/md0 -s 256 -c aes-xts-plain64 -h sha256
-
-WARNING!
-========
-This will overwrite data on /dev/md0 irrevocably.
-
-Are you sure? (Type 'yes' in capital letters): YES
-
-Enter passphrase for /dev/md0: 
-Verify passphrase:
+cryptsetup luksFormat /dev/md0 -s 256 -c aes-xts-plain64 -h sha512
 ```
 
-To automatically unlock the encrypted partition on boot, create a binary key
+To automatically unlock the encrypted partition on boot, create a binary key, please check this [guide](#binary-key-file)
 
 ```bash
 dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/srv_files.key
@@ -1267,7 +1746,7 @@ lvs -a -o lv_name,segtype,cachemode,devices vg_iscsi
 
 ##### vgcreate - `inconsistent logical block sizes`
 
-Problem is diffrent block size.
+Problem is different block size.
 
 ```bash
 lsblk -o NAME,TYPE,LOG-SEC,PHY-SEC,MIN-IO,OPT-IO  /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
@@ -1278,62 +1757,191 @@ crypt_cache_files    crypt     512     512    512      0
 ```
 
 > [!WARNING]
->
-> Changing the block size will result in the loss of all data and partitions on the disk.
-
-> [!NOTE]
->
-> `nvme-cli` needs to be installed
-
-Check supported block size
-
-```bash
-nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
-LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good (in use)
-LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better
-```
-
-Switching to LBA format `1` -> 4096
-
-```bash
-nvme format /dev/nvme0n1 -l 1 --force
-```
-
-Validate change
-
-```bash
-nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
-LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good 
-LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better (in use)
-```
-
-Partitions need to be [recreated](#nvme-cache---prepare-disk)
+> Check this [guide](#checklist-before-partitioning) how to change the block size
+> Partitions need to be [recreated](#nvme-cache---prepare-disk)
 
 #### dm-cache with SSD
 
 ### BTRFS - File system
 
+#### Media
+
+```bash
+mkfs.btrfs -L media -n 16k /dev/vg_files/lv_media
+```
+
+```bash
+mkdir /srv/media
+```
+
+```bash
+mount /dev/vg_files/lv_media /srv/media
+```
+
+```bash
+btrfs subvolume create /srv/media/@media
+```
+
+```bash
+btrfs subvolume list /srv/media
+ID 256 gen 10 top level 5 path @media
+```
+
+```bash
+btrfs subvolume set-default 256 /srv/media
+```
+
+```bash
+UUID=88af8746-217c-4f15-90b7-17b7aabaa113      /srv/media                btrfs     subvol=@media,noatime,compress=zstd,space_cache=v2              0 0
+```
+
+```bash
+btrfs quota enable 
+```
+
+snapper now 
+
+```bash
+mkdir /srv/media/.snapshots
+```
+
+TODO: Add FSTAB
+
+#### Private
+
+```bash
+mkfs.btrfs -L files -n 16k /dev/vg_files/lv_private
+```
+
+```bash
+mkdir /srv/private
+```
+
+```bash
+mount /dev/vg_files/lv_private /srv/private
+```
+
+```bash
+btrfs subvolume create /srv/private/@private
+```
+
+```bash
+btrfs subvolume list /srv/private
+ID 256 gen 10 top level 5 path @private
+```
+
+```bash
+btrfs subvolume set-default 256 /srv/private
+```
+
+```bash
+mkdir /srv/private/.snapshots
+```
+
+```bash
+UUID=424d6385-a1e1-48d9-bbf7-7627467be80d      /srv/private btrfs subvol=@private,noatime,compress=zstd,space_cache=v2,autodefrag 0 0
+UUID=424d6385-a1e1-48d9-bbf7-7627467be80d      /srv/private/.snapshots btrfs subvol=@private-snapshots,noatime,compress=zstd,space_cache=v2 0 0
+```
+
+> [!CAUTION]
+> Remember to umount before mount subvolume `umount /srv/private`
+
 ## Share files
 
-### Sambda
+### Samba
 
 ### DLNA
 
-## ICSCI
+### Snapshots - snapper
+
+```bash
+[root@qnap ~]# snapper -c media create-config /srv/media
+Creating config failed (creating btrfs subvolume .snapshots failed since it already exists).
+[root@qnap ~]# ls -la /srv/
+total 0
+drwxr-xr-x  1 root root  38 Nov 22 23:13 .
+drwxr-xr-x  1 root root 142 Nov 17 00:13 ..
+dr-xr-xr-x  1 root ftp    0 Oct 12 18:21 ftp
+drwxr-xr-x  1 root root   0 Oct 12 18:21 http
+drwxrwsr-x+ 1 root 1000  58 Nov 12 19:22 media
+drwxr-xr-x  1 root root  20 Nov 22 23:52 private
+[root@qnap ~]# snapper -c private create-config /srv/private
+Creating config failed (creating btrfs subvolume .snapshots failed since it already exists).
+```
+
+## SSD TRIM
+
+## ISCSI
 
 ## UPS
 
+## ACPI custom DSDT
+
+
 ## TODO
+
+
 
 - AES-NI ?
 10:00.2 Encryption controller: Advanced Micro Devices, Inc. [AMD] Raven/Raven2/FireFlight/Renoir/Cezanne Platform Security Processor
 
 - pushover
 
-- network onyl 100G
+- network onyl 100M
 0d:00.0 Ethernet controller: Aquantia Corp. AQtion AQC107 NBase-T/IEEE 802.3an Ethernet Controller [Atlantic 10G] (rev 02)
 
 - bonnie++
 
 [   10.669637] ee1004 3-0050: probe with driver ee1004 failed with error -5
 https://www.spinics.net/lists/linux-i2c/msg32331.html
+
+
+Optional dependencies for libsecret
+    org.freedesktop.secrets: secret storage backend
+
+
+ystemd-ukify: combine kernel and initrd into a signed Unified Kernel Image
+
+:: Proceed with installation? [Y/n] 
+:: Retrieving packages...
+ thin-provisioning-tools-1.3.0-1-x86_64                                                           1109.5 KiB  3.97 MiB/s 00:00 [############################################################################] 100%
+(1/1) checking keys in keyring                                                                                                 [############################################################################] 100%
+(1/1) checking package integrity                                                                                               [############################################################################] 100%
+(1/1) loading package files                                                                                                    [############################################################################] 100%
+(1/1) checking for file conflicts                                                                                              [############################################################################] 100%
+(1/1) checking available disk space                                                                                            [############################################################################] 100%
+:: Processing package changes...
+(1/1) installing thin-provisioning-tools                                                                                       [############################################################################] 100%
+:: Running post-transaction hooks...
+(1/1) Arming ConditionNeedsUpdate...
+[root@archiso boot]# mkinitcpio -P
+==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
+==> Using default configuration file: '/etc/mkinitcpio.conf'
+  -> -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
+==> Starting build: '6.17.8-arch1-1'
+  -> Running build hook: [base]
+  -> Running build hook: [systemd]
+  -> Running build hook: [btrfs]
+  -> Running build hook: [autodetect]
+  -> Running build hook: [microcode]
+  -> Running build hook: [modconf]
+  -> Running build hook: [kms]
+  -> Running build hook: [keyboard]
+  -> Running build hook: [sd-vconsole]
+  -> Running build hook: [block]
+  -> Running build hook: [mdadm_udev]
+  -> Running build hook: [sd-encrypt]
+==> WARNING: Possibly missing firmware for module: 'qat_6xxx'
+  -> Running build hook: [lvm2]
+sed: can't read /etc/lvm/lvm.conf: No such file or directory
+  -> Running build hook: [filesystems]
+  -> Running build hook: [fsck]
+==> Generating module dependencies
+==> Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
+  -> Early uncompressed CPIO image generation successful
+==> Initcpio image generation successful
+
+
+thin-provisioning-tools
+
+Please enter passphrase or recovery key for disk KINGSTON SNV3S500G (luks-7f0cc063-e383-4244-b4cb-12e6c396947f): (press TAB for no echo) [   11.785057] scsi 34:0:0:0: Direct-Access              USB DISK MODULE  PMAP PQ: 0 ANSI: 6
