@@ -17,7 +17,7 @@
         - [Recovery password](#recovery-password)
         - [Binary key file](#binary-key-file)
         - [TPM \& TANG](#tpm--tang)
-        - [Open luks partition](#open-luks-partition)
+        - [Decrypt luks partition](#decrypt-luks-partition)
         - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
       - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
       - [BTRFS file system](#btrfs-file-system)
@@ -382,14 +382,14 @@ Partitioning depends on the approach you choose, with or without a USB DOM (chec
 |                 |                   |
 |                 |       LVM         |
 |                 |                   |
-+                 +-------------------+
+|                 +-------------------+
 |                 |                   |
 |                 |    cryptsetup     |
 |                 |                   |
 +-----------------+-------------------+
 |               NVMe SSD              |
 |                1 disk               |
-+-----------+-------------------------+
++-------------------------------------+
 ```
 
 #### Checklist before partitioning
@@ -455,7 +455,7 @@ I realize that entering a password every time the NAS server boots can be inconv
 After trying different methods and taking into account the limitations (no graphics card), I decided to use [TPM](https://wiki.archlinux.org/title/Trusted_Platform_Module) + [TANG](https://github.com/latchset/tang) as a required condition to automatically unlock the encrypted root partition.
 
 > [!TIP]
-> How to setup [TANG server](https://man.archlinux.org/man/tang.8.en)
+> How to configure a [TANG server](https://man.archlinux.org/man/tang.8.en). It is important to understand how it works and how to restore the `jwk` files required for disaster recovery. Back up your `jwk` files !!!
 
 Required packages
 
@@ -493,7 +493,7 @@ argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit
 
 ##### Recovery password
 
-During encryption, `cryptsetup` asks for a static password. I recommend adding one, as it will be the recovery password. This password will be stored in slot `0`.
+During encryption, `cryptsetup` asks for a static password. Create a strong password, as this will be the recovery password. This password will be stored in slot `0`.
 
 ```bash
 cryptsetup luksFormat /dev/nvme0n1p2 -c aes-xts-plain64 -s 256 -h sha512
@@ -552,7 +552,7 @@ cryptsetup luksDump /dev/nvme0n1p2
 ```diff
 ...
 +Keyslots:
-+  1: luks2
++  2: luks2
 +       Key:        256 bits
 +       Priority:   normal
 +       Cipher:     aes-xts-plain64
@@ -565,13 +565,13 @@ Tokens:
   0: systemd-recovery
         Keyslot:    0
 + 1: clevis
-+       Keyslot:    1
++       Keyslot:    2
 ...
 ```
 
-##### Open luks partition
+##### Decrypt luks partition
 
-TODO: Add description
+It's required to progress with the next steps, like LVM, BTRFS, etc.
 
 ```bash
 cryptsetup open /dev/nvme0n1p2 luks_root
@@ -590,7 +590,8 @@ AMD Encryption controller is detect  but Kernel report some issue.
 
 #### Logical Volume Manager (LVM)
 
-TODO: Add description
+> [!TIP]
+> Read this [guide](https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system) about LVM to understand all the following command and their consequences.
 
 ```bash
 pvcreate /dev/mapper/luks_root
@@ -606,17 +607,29 @@ lvcreate -L 250G vg_root -n lv_root
 
 #### BTRFS file system
 
-TODO: Add description
+> [!TIP]
+> Read this [guide](https://wiki.archlinux.org/title/Btrfs) about BTRFS to understand all the following command and their consequences.
+
+In this configuration, subvolumes will be used for the following endpoints:
+
+- `@` - `/` (root)
+- `@home` - `/home`
+- `@snapshots` - `.snapshots`
+- `@var_cache` - `/var/cache`
+
+Format partition with `root` label
 
 ```bash
 mkfs.btrfs -L root /dev/vg_root/lv_root
 ```
 
-Create subvolume
+Mount the partition to create subvolumes
 
 ```bash
 mount /dev/vg_root/lv_root /mnt
 ```
+
+Create subvolume
 
 ```bash
 btrfs subvolume create /mnt/@
@@ -625,7 +638,7 @@ btrfs subvolume create /mnt/@snapshots
 btrfs subvolume create /mnt/@var_cache
 ```
 
-Make subvolume `@` as default
+List all subvolumes
 
 ```bash
 $ btrfs subvolume list -p /mnt
@@ -636,13 +649,24 @@ ID 258 gen 10 parent 5 top level 5 path @snapshots
 ID 259 gen 11 parent 5 top level 5 path @var_cache
 ```
 
+Make subvolume `@` as default
+
 ```bash
 btrfs subvolume set-default 256 /mnt
 ```
 
+Check default subvolume
+
 ```bash
 btrfs subvolume get-default /mnt
 ```
+
+> [!IMPORTANT]
+> Umount root partition, to use subvolumes
+>
+> ```bash
+> umount /mnt
+> ```
 
 #### EFI preparing
 
