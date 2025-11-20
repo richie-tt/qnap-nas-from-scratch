@@ -13,14 +13,14 @@
     - [OS disk preparation](#os-disk-preparation)
       - [Checklist before partitioning](#checklist-before-partitioning)
       - [Partition](#partition)
-      - [ROOT encryption](#root-encryption)
-        - [Recovery password](#recovery-password)
-        - [Binary key file](#binary-key-file)
-        - [TPM \& TANG](#tpm--tang)
-        - [Decrypt luks partition](#decrypt-luks-partition)
-        - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
-      - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
-      - [BTRFS file system](#btrfs-file-system)
+        - [ROOT encryption](#root-encryption)
+          - [Recovery password](#recovery-password)
+          - [Binary key file](#binary-key-file)
+          - [TPM \& TANG](#tpm--tang)
+          - [Decrypt luks partition](#decrypt-luks-partition)
+          - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
+        - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
+        - [BTRFS file system](#btrfs-file-system)
       - [EFI preparing](#efi-preparing)
       - [Mount layout](#mount-layout)
     - [Basic settings, packages, users](#basic-settings-packages-users)
@@ -448,7 +448,7 @@ Device           Start       End   Sectors   Size Type
 /dev/nvme0n1p2 2099200 976773119 974673920 464.8G Linux filesystem
 ```
 
-#### ROOT encryption
+##### ROOT encryption
 
 I realize that entering a password every time the NAS server boots can be inconvenient, even though the TS-h973AX board doesn't have a video card can be more difficult, but an unencrypted root partition where RAID passwords are stored also poses a serious security risk.
 
@@ -491,7 +491,7 @@ argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit
     twofish-xts        512b       144.4 MiB/s       147.6 MiB/s
 ```
 
-##### Recovery password
+###### Recovery password
 
 During encryption, `cryptsetup` asks for a static password. Create a strong password, as this will be the recovery password. This password will be stored in slot `0`.
 
@@ -499,7 +499,7 @@ During encryption, `cryptsetup` asks for a static password. Create a strong pass
 cryptsetup luksFormat /dev/nvme0n1p2 -c aes-xts-plain64 -s 256 -h sha512
 ```
 
-##### Binary key file
+###### Binary key file
 
 A binary key file is one option for unlocking a partition. I recommend using it as a backup on a USB drive. It can be helpful when you need to decrypt the main partition when the TPM + TANG method doesn't work.
 
@@ -517,7 +517,7 @@ cryptsetup luksAddKey /dev/nvme0n1p2 -S 1 root.key -h sha512
 
 TODO: require a proper Kernel parameters
 
-##### TPM & TANG
+###### TPM & TANG
 
 Validate if TPM is working, in case of issue check this [guide](https://wiki.archlinux.org/title/Trusted_Platform_Module)
 
@@ -569,7 +569,7 @@ Tokens:
 ...
 ```
 
-##### Decrypt luks partition
+###### Decrypt luks partition
 
 It's required to progress with the next steps, like LVM, BTRFS, etc.
 
@@ -577,7 +577,7 @@ It's required to progress with the next steps, like LVM, BTRFS, etc.
 cryptsetup open /dev/nvme0n1p2 luks_root
  ```
 
-##### Use dedicate AMD Encryption controller
+###### Use dedicate AMD Encryption controller
 
 AMD Encryption controller is detect  but Kernel report some issue.
 
@@ -588,7 +588,7 @@ AMD Encryption controller is detect  but Kernel report some issue.
 > [!CAUTION]
 > Require investigation
 
-#### Logical Volume Manager (LVM)
+##### Logical Volume Manager (LVM)
 
 > [!TIP]
 > Read this [guide](https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system) about LVM to understand all the following command and their consequences.
@@ -605,7 +605,7 @@ vgcreate vg_root /dev/mapper/luks_root
 lvcreate -L 250G vg_root -n lv_root
 ```
 
-#### BTRFS file system
+##### BTRFS file system
 
 > [!TIP]
 > Read this [guide](https://wiki.archlinux.org/title/Btrfs) about BTRFS to understand all the following command and their consequences.
