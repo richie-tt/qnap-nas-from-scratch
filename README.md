@@ -12,8 +12,8 @@
     - [Kernel parameters](#kernel-parameters)
     - [OS disk preparation](#os-disk-preparation)
       - [Checklist before partitioning](#checklist-before-partitioning)
-      - [Partition](#partition)
-        - [ROOT encryption](#root-encryption)
+      - [Partitions](#partitions)
+        - [Encryption (root)](#encryption-root)
           - [Recovery password](#recovery-password)
           - [Binary key file](#binary-key-file)
           - [TPM \& TANG](#tpm--tang)
@@ -21,7 +21,7 @@
           - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
         - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
         - [BTRFS file system](#btrfs-file-system)
-      - [EFI preparing](#efi-preparing)
+      - [EFI preparing (/boot)](#efi-preparing-boot)
       - [Mount layout](#mount-layout)
     - [Basic settings, packages, users](#basic-settings-packages-users)
       - [System initialization](#system-initialization)
@@ -41,6 +41,7 @@
       - [Propagation dotfile](#propagation-dotfile)
       - [Timezone and date](#timezone-and-date)
       - [Hostname](#hostname)
+      - [Locale (again)](#locale-again)
     - [OS optimization](#os-optimization)
       - [Network](#network)
       - [RAM/IO (cache, inotify)](#ramio-cache-inotify)
@@ -49,7 +50,7 @@
       - [Agetty with UART](#agetty-with-uart)
   - [NAS Server](#nas-server)
     - [Disk Topology](#disk-topology)
-      - [Partitions](#partitions)
+      - [Partitions](#partitions-1)
         - [RAID6 - prepare disk](#raid6---prepare-disk)
         - [RAID1 - prepare disk](#raid1---prepare-disk)
         - [NVMe cache - prepare disk](#nvme-cache---prepare-disk)
@@ -57,6 +58,7 @@
       - [RAID6](#raid6)
       - [RAID1](#raid1)
       - [RAID configuration](#raid-configuration)
+        - [Change the name](#change-the-name)
       - [RAID optimization](#raid-optimization)
       - [RAID Mail notification](#raid-mail-notification)
         - [Postfix](#postfix)
@@ -331,8 +333,7 @@ The following kernel parameters stabilize the UART **ONLY** when receiving logs 
 Optimized, which working well
 
 ```bash
-earlycon=uart8250,io,0x3f8,115200 \
-  console=ttyS0,115200n8 \
+console=ttyS0,115200n8 \
   console=tty0 \
   loglevel=6 \
   8250.nr_uarts=2 \
@@ -342,7 +343,7 @@ earlycon=uart8250,io,0x3f8,115200 \
 For debug purpose, useful for other Linux distribution
 
 ```diff
-earlycon=uart8250,io,0x3f8,115200 \
++earlycon=uart8250,io,0x3f8,115200 \
   console=ttyS0,115200n8 \
   console=tty0 \
   loglevel=6 \
@@ -424,7 +425,7 @@ LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Perfo
 LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better (in use)
 ```
 
-#### Partition
+#### Partitions
 
 Required disk configuration:
 
@@ -448,7 +449,7 @@ Device           Start       End   Sectors   Size Type
 /dev/nvme0n1p2 2099200 976773119 974673920 464.8G Linux filesystem
 ```
 
-##### ROOT encryption
+##### Encryption (root)
 
 I realize that entering a password every time the NAS server boots can be inconvenient, even though the TS-h973AX board doesn't have a video card can be more difficult, but an unencrypted root partition where RAID passwords are stored also poses a serious security risk.
 
@@ -515,7 +516,22 @@ Add key file to Luks on slot `1`
 cryptsetup luksAddKey /dev/nvme0n1p2 -S 1 root.key -h sha512
 ```
 
-TODO: require a proper Kernel parameters
+> [!TIP]
+> Read this guide, about the [binary key file](https://wiki.archlinux.org/title/Dm-crypt/System_configuration#rd.luks.key)
+
+Add following kernel parameter
+
+- `rd.luks.key=XXXXXXXX=/path/to/keyfile:UUID=ZZZZZZZZ`, where `XXXXXXXX` is the UUID encrypted partition and `ZZZZZZZZ` is the UUID of partition where key is located.
+
+- `rd.luks.options=XXXXXXXX=keyfile-timeout=10s`- without this options, Kernel will wait forever for binary key.
+
+Instead of adding another kernel parameter, there is possibility to add this settings to `/etc/crypttab.initramfs` which during recreating of initramfs `mkinitcpio -P` will be included to initramfs-linux.img.
+
+```conf
+# /etc/crypttab.initramfs
+
+luks_root    UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX=   /root.key:UUID=ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ   luks,keyfile-timeout=10s
+```
 
 ###### TPM & TANG
 
@@ -527,7 +543,7 @@ tpm2_pcrread sha256:7
     7 : 0x46R2AO92OXMV4QMJJNDXITEP33BR3FZXGVU01VC0B6XY8LIGEC51K8M00SCJ4DCJM
 ```
 
-Check if TANG is accessible,
+Check if TANG is accessible, in this scenario TANG server is exposed on `7500` port
 
 ```bash
 curl http://tang.example.com:7500/adv
@@ -583,6 +599,11 @@ AMD Encryption controller is detect  but Kernel report some issue.
 
 ```bash
 10:00.2 Encryption controller: Advanced Micro Devices, Inc. [AMD] Raven/Raven2/FireFlight/Renoir/Cezanne Platform Security Processor
+```
+
+```bash
+ccp 0000:10:00.2: ccp enabled
+ccp 0000:10:00.2: psp: unable to access the device: you might be running a broken BIOS.
 ```
 
 > [!CAUTION]
@@ -661,14 +682,7 @@ Check default subvolume
 btrfs subvolume get-default /mnt
 ```
 
-> [!IMPORTANT]
-> Umount root partition, to use subvolumes
->
-> ```bash
-> umount /mnt
-> ```
-
-#### EFI preparing
+#### EFI preparing (/boot)
 
 TODO: Add description
 
@@ -678,13 +692,27 @@ mkfs.vfat -F 32 /dev/nvme0n1p1
 
 #### Mount layout
 
-TODO: Add description
+Make following folders
 
-root@archiso /mnt # mkdir home 
-root@archiso /mnt # mkdir -p /var/cache
-root@archiso /mnt # mkdir boot         
-root@archiso /mnt # mkdir .snapshots
+```bash
+mkdir /mnt/home 
 
+mkdir -p /mnt/var/cache
+
+mkdir /mnt/boot         
+
+mkdir /mnt/.snapshots
+```
+
+> [!IMPORTANT]
+> Umount root partition, to use subvolumes
+>
+> ```bash
+> umount /mnt
+> ```
+
+> [!TIP]
+> Read this [doc](https://btrfs.readthedocs.io/en/latest/ch-mount-options.html), to understand BTRFS mount options.
 
 ```bash
 mount -o subvol=@,relatime,lazytime,autodefrag /dev/vg_root/lv_root /mnt
@@ -698,17 +726,25 @@ mount -o subvol=@var_cache,compress=zstd:3,relatime,lazytime /dev/vg_root/lv_roo
 mount /dev/nvme0n1p1 /mnt/boot
 ```
 
-
 ### Basic settings, packages, users
 
 #### System initialization
 
 Requires all system partitions to be properly mounted on `/mnt`, check the visualization of the mount point layout
 
-```text
-/mnt        (root partition)
-├── boot    (EFI under /mnt/boot)
-└── home    (user data /mnt/home)
+Check mount layout
+
+```bash
+$ lsblk
+
+nvme0n1               259:0    0 465.8G  0 disk  
+├─nvme0n1p1           259:1    0     1G  0 part  /mnt/boot
+└─nvme0n1p2           259:2    0 464.8G  0 part  
+  └─luks_root         253:0    0 464.7G  0 crypt 
+    └─vg_root-lv_root 253:1    0   250G  0 lvm   /mnt/var/cache
+                                                 /mnt/.snapshots
+                                                 /mnt/home
+                                                 /mnt
 ```
 
 ```bash
@@ -719,8 +755,6 @@ pacstrap /mnt amd-ucode base base-devel bash-completion \
 During creation of initramfs, may occur some problems, all will be fixed in later steps
 
 ```bash
-...
-12/15) Updating linux initcpios...
 ==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
 ==> Using default configuration file: '/etc/mkinitcpio.conf'
   -> -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
@@ -742,10 +776,6 @@ During creation of initramfs, may occur some problems, all will be fixed in late
 ==> Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
 ==> WARNING: errors were encountered during the build. The image may not be complete.
 error: command failed to execute correctly
-(13/15) Reloading system bus configuration...
-  Skipped: Running in chroot.
-(14/15) Checking for old perl modules...
-(15/15) Updating the info directory file...
 ```
 
 Remember to generate `fstab`
@@ -830,6 +860,7 @@ pacman -Syy && \
 pacman -S acpi \
   acpi_call \
   acpid \
+  clevis \
   dmidecode \
   git \
   go \
@@ -837,6 +868,7 @@ pacman -S acpi \
   iotop \
   lm_sensors \
   lsof \
+  lvm2 \
   mdadm \
   minidlna \
   nvme-cli \
@@ -846,22 +878,22 @@ pacman -S acpi \
   strace \
   sysstat \
   systemd-resolvconf \
+  tpm2-tools \
   zsh \
   zsh-autosuggestions \
   zsh-history-substring-search \
   zsh-syntax-highlighting
 ```
 
-
 > [!TIP]
-> `acpi_call` should be replaced with  `acpi_call-dkms` if used LTS or different Kelner images
+> `acpi_call` should be replaced with  `acpi_call-dkms` if used LTS or different Kernel images
 
 #### Service to enable
 
 ```bash
 systemctl enable acpid
 systemctl enable sshd
-systemctl enable systemd-network
+systemctl enable systemd-networkd
 systemctl enable systemd-resolved
 ```
 
@@ -872,45 +904,73 @@ Remember to to switch to regular user `my_user`
 ```bash
 git clone https://aur.archlinux.org/yay.git
 cd yay
-makepkg -is
+makepkg -si
 ```
 
 #### AUR packages
 
 ```bash
-yay -S setserial \
-  fzf-marks \
+yay -S fzf-marks \
+  mkinitcpio-systemd-extras \
+  setserial \
   ttf-meslo-nerd-font-powerlevel10k \
   zsh-theme-powerlevel10k-git
 ```
 
 #### Configure network
 
+> [!TIP]
+> Read this [guide](https://www.freedesktop.org/software/systemd/man/latest/systemd.network.html) about network configuration via `systemd-networkd`.
+
 ```conf
 # /etc/systemd/network/10-nic.network 
 
-# Enable DHCPv4 and DHCPv6 on all physical ethernet links
+# Enable DHCPv4 on all physical ethernet links
 [Match]
 Kind=!*
 Type=ether
 
 [Network]
-DHCP=yes
+DHCP=ipv4
+LLDP=true
+EmitLLDP=yes
+
+[DHCPv4]
+ClientIdentifier=mac
+UseNTP=true
 ```
 
 #### Initramfs image
 
-If you use a `BTRFS` as files system, is good to add `btrfs` module
+Package `mkinitcpio-systemd-extras` will delivery all necessary hooks [sd-clevis](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Clevis), [sd-network](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Networking), [sd-resolve](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Name-Resolution) require auto-unlock root partition via network, please read documentation careful.
+
+Modules:
+
+`atlantic` - driver for 10G ethernet
+`igc` - driver for 2.5G ethernet
+`vfat` - driver to access `boot` partition during boot
 
 ```conf
 # /etc/mkinitcpio.conf
 
 ...
-MODULES=(vfat)
+MODULES=(atlantic igc ethernet)
 ...
 
-BINARIES=(btrfs)
+HOOKS=(base systemd btrfs autodetect microcode modconf kms keyboard sd-vconsole block mdadm_udev sd-network sd-resolve block sd-clevis sd-encrypt lvm2 filesystems fsck)
 ```
+
+- `btrfs` - adding all BTRFS modules, which can be helpful to fix root partition
+- `mdadm_udev` - provide support for assembling RAID arrays via udev
+- `sd-network` - adding support for network
+- `sd-resolve` - adding support for resolving DNS names
+- `sd-clevis` - adding support for clevis
+- `lvm2` - Adds the device mapper kernel module and the lvm tool to the image.
+
+> [!CAUTION]
+> `sd-resolve` require to create `/etc/hostname`
+>
+> Remember to recreate initramfs `mkinitcpio -p linux`
 
 #### UEFI boot manager
 
@@ -929,7 +989,7 @@ title Arch
 linux /vmlinuz-linux
 initrd /initramfs-linux.img
 initrd /amd-ucode.img
-options root=UUID=8398cd78-1111-2222-3333-f880264aa816 rw mitigations=auto audit=0 earlycon=uart8250,io,0x3f8,115200 console=ttyS0,115200n8 console=tty0 loglevel=6 no_console_suspend 8250.nr_uarts=1 8250.share_irqs=1 8250.skip_tx_test=1 8250.autoflow=0
+options options rd.neednet=1 rd.luks.uuid=7f0cc063-e383-4244-b4cb-12e6c396947f root=UUID=e0ff3e81-a516-4dbf-8103-8503655db764 rw mitigations=off audit=auto console=ttyS0,115200n8 console=tty0 loglevel=6 8250.nr_uarts=2 8250.skip_txen_test=1  
 ```
 
 > [!WARNING]
@@ -946,7 +1006,7 @@ ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 ```
 
 ```conf
-#  /etc/resolv.conf
+#  /etc/systemd/resolved.conf
 
 [Resolve]
 
@@ -967,7 +1027,7 @@ systemctl restart systemd-resolved
 To propagate file configuration for each new user, add file to `/etc/skel`
 
 ```bash
-cp .vim /etc/skel
+cp .vimrc /etc/skel
 ```
 
 ```bash
@@ -990,10 +1050,48 @@ timedatectl set-timezone Europe/Warsaw
 timedatectl set-ntp true
 ```
 
+Validate
+
+```bash
+$ timedatectl timesync-status 
+
+
+       Server: 89.250.197.242 (89.250.197.242)
+Poll interval: 1min 4s (min: 32s; max 34min 8s)
+         Leap: normal
+      Version: 4
+      Stratum: 4
+    Reference: A29FC87B
+    Precision: 1us (-20)
+Root distance: 69.884ms (max: 5s)
+       Offset: +3.568ms
+        Delay: 568us
+       Jitter: 1.348ms
+ Packet count: 2
+    Frequency: +0.000ppm
+```
+
 #### Hostname
 
 ```bash
 hostnamectl hostname qnap
+```
+
+#### Locale (again)
+
+Executing this command one again, will recreate `/etc/vconsole.conf` file
+
+```bash
+localectl set-keymap pl2
+```
+
+```conf
+# /etc/vconsole.conf
+
+KEYMAP=pl2
+XKBLAYOUT=pl
+XKBMODEL=pc105
+XKBOPTIONS=terminate:ctrl_alt_bksp
 ```
 
 ### OS optimization
@@ -1095,7 +1193,7 @@ dev.raid.speed_limit_max = 800000
 
 ### UART fix
 
-In the [Board/UART](#boot-order) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data, switches to polling mode (timer-controlled) the UART operation is slower but stable.
+In the [Board/UART](#uart) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data, switches to polling mode (timer-controlled) the UART operation is slower but stable.
 
 Manually step validation
 
@@ -1286,7 +1384,7 @@ mdadm --create /dev/md0 --level=1 \
 Add the RAID map to `/etc/mdadm.conf`
 
 ```bash
-sudo mdadm --detail --scan | sudo tee /etc/mdadm.conf
+mdadm --detail --scan | tee /etc/mdadm.conf
 ```
 
 which should give the following results
@@ -1312,6 +1410,18 @@ md0 : active raid6 sde1[2] sdd1[1] sdf1[3] sdc1[0] sdg1[4]
       bitmap: 0/30 pages [0KB], 65536KB chunk
 
 unused devices: <none>
+```
+
+##### Change the name
+
+If the array already exists, it will be automatically created with invalid names. To fix this, follow these steps.
+
+```bash
+mdadm --stop /dev/md127
+```
+
+```bash
+mdadm --assemble --update=name --name=iscsi /dev/md1 /dev/sda1 /dev/sdb1
 ```
 
 #### RAID optimization
@@ -1395,7 +1505,7 @@ Configuration
 relayhost = [smtp.gmail.com]:587
 smtp_use_tls = yes
 smtp_sasl_auth_enable = yes
-smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd
+smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
 smtp_sasl_security_options = noanonymous
 smtp_sasl_tls_security_options = noanonymous
 ```
@@ -1426,6 +1536,7 @@ Restart service and check the status
 
 ```bash
 systemctl restart postfix.service
+systemctl enable postfix.service
 ```
 
 Test mail
@@ -1444,50 +1555,16 @@ echo "This is the body of an encrypted email" | mail -s "This is the subject lin
 
 ### dm-crypt
 
-Encryption performance depends on the hardware features supported, so benchamrk is important. [check this guide](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption)
-
-```bash
-cryptsetup benchmark 
-
-# Tests are approximate using memory only (no storage IO).
-PBKDF2-sha1      1072163 iterations per second for 256-bit key
-PBKDF2-sha256    2076388 iterations per second for 256-bit key
-PBKDF2-sha512     688946 iterations per second for 256-bit key
-PBKDF2-ripemd160  386643 iterations per second for 256-bit key
-PBKDF2-whirlpool  274784 iterations per second for 256-bit key
-argon2i       4 iterations, 924844 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
-argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit key (requested 2000 ms time)
-#     Algorithm |       Key |      Encryption |      Decryption
-        aes-cbc        128b       446.3 MiB/s       898.6 MiB/s
-    serpent-cbc        128b        46.7 MiB/s       157.0 MiB/s
-    twofish-cbc        128b        88.4 MiB/s       159.4 MiB/s
-        aes-cbc        256b       349.6 MiB/s       853.7 MiB/s
-    serpent-cbc        256b        46.7 MiB/s       157.0 MiB/s
-    twofish-cbc        256b        88.4 MiB/s       159.4 MiB/s
-        aes-xts        256b      1054.6 MiB/s      1054.1 MiB/s
-    serpent-xts        256b       145.4 MiB/s       145.5 MiB/s
-    twofish-xts        256b       148.0 MiB/s       147.7 MiB/s
-        aes-xts        512b       951.1 MiB/s       950.5 MiB/s
-    serpent-xts        512b       145.4 MiB/s       145.5 MiB/s
-    twofish-xts        512b       144.4 MiB/s       147.6 MiB/s
-```
+> [!TIP]
+> Before taking any action, please read the encryption description in [description](#encryption-root).
 
 Encrypt RAID6, RAID1, and both cache partitions
 
 ```bash
-cryptsetup luksFormat /dev/md0 -s 256 -c aes-xts-plain64 -h sha256
-
-WARNING!
-========
-This will overwrite data on /dev/md0 irrevocably.
-
-Are you sure? (Type 'yes' in capital letters): YES
-
-Enter passphrase for /dev/md0: 
-Verify passphrase:
+cryptsetup luksFormat /dev/md0 -s 256 -c aes-xts-plain64 -h sha512
 ```
 
-To automatically unlock the encrypted partition on boot, create a binary key
+To automatically unlock the encrypted partition on boot, create a binary key, please check this [guide](#binary-key-file)
 
 ```bash
 dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/srv_files.key
@@ -1809,4 +1886,6 @@ sed: can't read /etc/lvm/lvm.conf: No such file or directory
 ==> Initcpio image generation successful
 
 
-thin-provisioning-tools 
+thin-provisioning-tools
+
+Please enter passphrase or recovery key for disk KINGSTON SNV3S500G (luks-7f0cc063-e383-4244-b4cb-12e6c396947f): (press TAB for no echo) [   11.785057] scsi 34:0:0:0: Direct-Access              USB DISK MODULE  PMAP PQ: 0 ANSI: 6
