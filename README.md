@@ -72,6 +72,8 @@
         - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
       - [dm-cache with SSD](#dm-cache-with-ssd)
     - [BTRFS - File system](#btrfs---file-system)
+      - [Media](#media)
+      - [Private](#private)
   - [Share files](#share-files)
     - [Samba](#samba)
     - [DLNA](#dlna)
@@ -530,7 +532,7 @@ Instead of adding another kernel parameter, there is possibility to add this set
 ```conf
 # /etc/crypttab.initramfs
 
-luks_root    UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX=   /root.key:UUID=ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ   luks,keyfile-timeout=10s
+luks_root    UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX   /root.key:UUID=ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ   luks,keyfile-timeout=10s
 ```
 
 ###### TPM & TANG
@@ -1280,7 +1282,7 @@ RAID6 mdadm - 5x4TB HDD
             └─ lv_media → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
 
 
-# ISCSI — dedicated aray for ISCSI with cache
+# ISCSI — dedicated array for ISCSI with cache
 RAID1 mdadm - 2x500G HDD
   └─ cryptsetup - encrypt whole space
        └─ Luks2 - PV: crypt_iscsi + crypt_cache_iscsi
@@ -1778,6 +1780,81 @@ crypt_cache_files    crypt     512     512    512      0
 #### dm-cache with SSD
 
 ### BTRFS - File system
+
+#### Media
+
+```bash
+mkfs.btrfs -L media -n 16k /dev/vg_files/lv_media
+```
+
+```bash
+mkdir /srv/media
+```
+
+```bash
+mount /dev/vg_files/lv_media /srv/media
+```
+
+```bash
+btrfs subvolume create /srv/media/@media
+btrfs subvolume create /srv/media/@media-snapshots
+```
+
+```bash
+btrfs subvolume list /srv/media
+ID 256 gen 10 top level 5 path @media
+ID 257 gen 10 top level 5 path @media-snapshots
+```
+
+```bash
+btrfs subvolume set-default 256 /srv/media
+```
+
+
+```bash
+mkdir /srv/media/.snapshots
+```
+
+TODO: Add FSTAB
+
+
+#### Private
+
+```bash
+mkfs.btrfs -L files -n 16k /dev/vg_files/lv_private
+```
+
+```bash
+mkdir /srv/private
+```
+
+```bash
+mount /dev/vg_files/lv_private /srv/private
+```
+
+```bash
+btrfs subvolume create /srv/private/@private
+btrfs subvolume create /srv/private/@private-snapshots
+```
+
+```bash
+btrfs subvolume list /srv/private
+ID 256 gen 10 top level 5 path @private
+ID 257 gen 10 top level 5 path @private-snapshots
+```
+
+```bash
+btrfs subvolume set-default 256 /srv/private
+```
+
+
+```bash
+mkdir /srv/private/.snapshots
+```
+
+
+> [!CAUTION]
+> Remember to umount before mount subvolume `umount /srv/private`
 
 ## Share files
 
