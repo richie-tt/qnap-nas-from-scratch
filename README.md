@@ -95,13 +95,14 @@ Specification:
 - RAM - max 64GB DDR4 SO-DIMM
 - Drive Bays - 9 bays
   - 5 x 3.5" SATA 6 Gb/s
-  - 4 x 2.5" SATA 6 Gb/s/U.2 NVMe PCIe Gen 3 x4
-  - 1x USB-DOM 4G internal contain `QuTS hero` OS
+  - 2 x 2.5" SATA 6 Gb/s / U.2 NVMe PCIe Gen 3 x4
+  - 2 x 2.5" SATA 6 Gb/s
+  - 1x USB-DOM 4G internal contain [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero) OS
 - Network - 3 ports
   - 1x 10GBase
   - 2x 2.5GBase
 - USB
-  - 1x UCB-C 3.2 Gen 2 10Gb/s
+  - 1x USB-C 3.2 Gen 2 10Gb/s
   - 2x USB-A 3.2 Gen 2 back
   - 1x USB-A 3.2 Gen 2 front
 
