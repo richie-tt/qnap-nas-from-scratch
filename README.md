@@ -76,7 +76,7 @@
     - [Samba](#samba)
     - [DLNA](#dlna)
   - [SSD TRIM](#ssd-trim)
-  - [ISCSI](#iscsi-1)
+  - [ICSCI](#icsci)
   - [UPS](#ups)
   - [ACPI custome DSDT](#acpi-custome-dsdt)
   - [TODO](#todo)
@@ -1761,7 +1761,7 @@ lvs -a -o lv_name,segtype,cachemode,devices vg_iscsi
 
 ##### vgcreate - `inconsistent logical block sizes`
 
-Problem is diffrent block size.
+Problem is different block size.
 
 ```bash
 lsblk -o NAME,TYPE,LOG-SEC,PHY-SEC,MIN-IO,OPT-IO  /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
@@ -1772,36 +1772,8 @@ crypt_cache_files    crypt     512     512    512      0
 ```
 
 > [!WARNING]
->
-> Changing the block size will result in the loss of all data and partitions on the disk.
-
-> [!NOTE]
->
-> `nvme-cli` needs to be installed
-
-Check supported block size
-
-```bash
-nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
-LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good (in use)
-LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better
-```
-
-Switching to LBA format `1` -> 4096
-
-```bash
-nvme format /dev/nvme0n1 -l 1 --force
-```
-
-Validate change
-
-```bash
-nvme id-ns /dev/nvme1n1 -H | grep -e "^LBA Format"
-LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Performance: 0x2 Good 
-LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better (in use)
-```
-
-Partitions need to be [recreated](#nvme-cache---prepare-disk)
+> Check this [guide](#checklist-before-partitioning) how to change the block size
+> Partitions need to be [recreated](#nvme-cache---prepare-disk)
 
 #### dm-cache with SSD
 
@@ -1815,7 +1787,7 @@ Partitions need to be [recreated](#nvme-cache---prepare-disk)
 
 ## SSD TRIM
 
-## ISCSI
+## ICSCI
 
 ## UPS
 
