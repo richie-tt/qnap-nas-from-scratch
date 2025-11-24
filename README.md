@@ -1807,7 +1807,7 @@ crypt_cache_files    crypt     512     512    512      0
 
 #### Media
 
-Format partition with `16k` size of btree nodes.
+Format partition with `16k` size of btree nodes
 
 ```bash
 mkfs.btrfs -L media -n 16k /dev/vg_files/lv_media
@@ -1831,7 +1831,7 @@ Create subvolume `@media`
 btrfs subvolume create /srv/media/@media
 ```
 
-Get list subvolume
+Get a list of subvolumes
 
 ```bash
 btrfs subvolume list /srv/media
@@ -1844,7 +1844,7 @@ Set default subvolume
 btrfs subvolume set-default 256 /srv/media
 ```
 
-Unmount partition
+Unmount partition, because `media` will be mounted as `subvolume`
 
 ```bash
 unmount /srv/media
@@ -1873,42 +1873,69 @@ btrfs quota enable
 
 #### Private
 
+Format partition with `16k` size of btree nodes
+
 ```bash
 mkfs.btrfs -L files -n 16k /dev/vg_files/lv_private
 ```
+
+Create `private` folder for partition mounting
 
 ```bash
 mkdir /srv/private
 ```
 
+Mount partition
+
 ```bash
 mount /dev/vg_files/lv_private /srv/private
 ```
 
+Create subvolume `@private`
+
 ```bash
 btrfs subvolume create /srv/private/@private
 ```
+
+Get a list of subvolumes
 
 ```bash
 btrfs subvolume list /srv/private
 ID 256 gen 10 top level 5 path @private
 ```
 
+Set default subvolume
+
 ```bash
 btrfs subvolume set-default 256 /srv/private
 ```
 
-```bash
-mkdir /srv/private/.snapshots
-```
+Unmount partition, because `private` will be mounted as `subvolume`
 
 ```bash
-UUID=424d6385-a1e1-48d9-bbf7-7627467be80d      /srv/private btrfs subvol=@private,noatime,compress=zstd,space_cache=v2,autodefrag 0 0
-UUID=424d6385-a1e1-48d9-bbf7-7627467be80d      /srv/private/.snapshots btrfs subvol=@private-snapshots,noatime,compress=zstd,space_cache=v2 0 0
+unmount /srv/private
 ```
 
-> [!CAUTION]
-> Remember to umount before mount subvolume `umount /srv/private`
+Add entry to `/etc/fstab`
+
+```bash
+UUID=424d6385-a1e1-48d9-bbf7-7627467be80d  /srv/private  btrfs  subvol=@private,noatime,compress=zstd,space_cache=v2,autodefrag  0 0
+```
+
+Mount all filesystems mentioned in fstab
+
+```bash
+mount -a
+```
+
+> [!TIP]
+> Sometimes is required to run `systemctl daemon-reload`
+
+Enable BTRFS quota
+
+```bash
+btrfs quota enable 
+```
 
 ## Share files
 
