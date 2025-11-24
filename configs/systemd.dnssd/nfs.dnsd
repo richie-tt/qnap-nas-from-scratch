@@ -1,0 +1,4 @@
+[Service]
+Name=%H NFSv4
+Type=_nfs._tcp
+Port=2049

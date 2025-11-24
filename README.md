@@ -5,7 +5,7 @@
     - [Specification](#specification)
     - [UART](#uart)
       - [Investigation](#investigation)
-      - [Useful command](#useful-command)
+      - [Useful debug command](#useful-debug-command)
     - [BIOS](#bios)
       - [Boot order](#boot-order)
   - [Arch installation](#arch-installation)
@@ -70,19 +70,33 @@
         - [Cache ISCSI](#cache-iscsi)
       - [Troubleshooting](#troubleshooting)
         - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
+        - [Useful command](#useful-command)
       - [dm-cache with SSD](#dm-cache-with-ssd)
     - [BTRFS - File system](#btrfs---file-system)
       - [Media](#media)
       - [Private](#private)
+      - [Snapshots - snapper](#snapshots---snapper)
+        - [Useful command](#useful-command-1)
+    - [Disk power managed - hdparm](#disk-power-managed---hdparm)
   - [Share files](#share-files)
     - [Samba](#samba)
+      - [Advertising SAMBA - mDNS](#advertising-samba---mdns)
+      - [Windows compatibility](#windows-compatibility)
+      - [Create Samba user](#create-samba-user)
+      - [NSSWITCH](#nsswitch)
+      - [Useful command](#useful-command-2)
     - [DLNA](#dlna)
-    - [Snapshots - snapper](#snapshots---snapper)
+      - [ReadyMedia (MiniDLNA)](#readymedia-minidlna)
+      - [Gerbera Media Server](#gerbera-media-server)
   - [SSD TRIM](#ssd-trim)
   - [ISCSI](#iscsi-1)
+    - [Filesystem](#filesystem)
+    - [Configuration](#configuration)
+      - [ACL](#acl)
+      - [Volume](#volume)
+      - [Login](#login)
   - [UPS](#ups)
   - [ACPI custom DSDT](#acpi-custom-dsdt)
-  - [TODO](#todo)
 
 ## Board
 
@@ -179,7 +193,7 @@ I've spent many hours trying to understand why `UART` works unstable and quickly
 > [!NOTE]
 > In section [UART fix](#uart-fix) is explained how to make polling mode permanent for each boot (`IRQ 4` -> `IRQ 0`)
 
-#### Useful command
+#### Useful debug command
 
 - `cat /proc/tty/driver/serial` - UART status with flags/registry
 - `fuser -v /dev/ttyS0` - shows which process is hanging/using the port, kill all processes with `-k`
@@ -869,6 +883,7 @@ pacman -S acpi \
   mdadm \
   minidlna \
   nvme-cli \
+  ranger \
   samba \
   smartmontools \
   snapper \
@@ -879,7 +894,8 @@ pacman -S acpi \
   zsh \
   zsh-autosuggestions \
   zsh-history-substring-search \
-  zsh-syntax-highlighting
+  zsh-syntax-highlighting \
+  xfsprogs
 ```
 
 > [!TIP]
@@ -904,6 +920,10 @@ cd yay
 makepkg -si
 ```
 
+```bash
+yay --editmenu --save
+```
+
 #### AUR packages
 
 ```bash
@@ -911,6 +931,7 @@ yay -S fzf-marks \
   mkinitcpio-systemd-extras \
   # mkinitcpio-systemd-root-password \
   setserial \
+  fstabfmt \
   ttf-meslo-nerd-font-powerlevel10k \
   zsh-theme-powerlevel10k-git
 ```
@@ -934,6 +955,7 @@ Type=ether
 DHCP=ipv4
 LLDP=true
 EmitLLDP=yes
+MulticastDNS=yes
 
 [DHCPv4]
 ClientIdentifier=mac
@@ -1259,48 +1281,50 @@ After switching the UART to polling mode, agetty works correctly, there is no ne
 ### Disk Topology
 
 ```bash
-+----------+----------+----------------------+-------------------------------------------+
-|subvolume |subvolume |subvolume |subvolume  |                                           |
-|  @media  |@snapshot | @private |@snapshot  |                                           |
-|          |          |          |           |                                           |
-+----------+----------+----------+-----------+-------------------------------------------+
-|                                                                                        |
-|                                          BTRFS                                         |
-|                                                                                        |
-+---------------------+----------------------+---------+-----------+---------+-----------+
-|                     |                      |         |           |         |           |
-|      LVM media      |      LVM private     |  cache  |  metadata |  cache  |  metadata |
-|                     |                      | (media) |  (media)  |(private)| (private) |
-+---------------------+----------------------+---------+-----------+---------+-----------+
-|                                            |                                           |
-|                 RAID6 (mdadm)              |                                           |
-|                                            |                                           |
-+--------+--------+--------+--------+--------+-------------------------------------------+
-|        |        |        |        |        |                                           |
-|  sdc1  |  sdd1  |  sde1  |  sdf1  |  sdg1  |                  nvme0n1p1                |
-|        |        |        |        |        |                                           |
-+--------+--------+--------+--------+--------+-------------------------------------------+
+Media & Private with cache writethrough
+
++----------------------+----------------------+----------------------+-----------------------+
+|      subvolume       |       subvolume      |       subvolume      |       subvolume       |
+|        @media        |       @snapshot      |        @private      |       @snapshot       |
+|                      |                      |                      |                       |
++----------------------+----------------------+----------------------+-----------------------+
+|                                                                                            |
+|                                              BTRFS                                         |
+|                                                                                            |
++-------------------------+----------------------+---------+-----------+---------+-----------+
+|                         |                      |         |          |          |           |
+|         LVM media       |      LVM private     |  cache  | metadata |  cache   |  metadata |
+|                         |                      | (media) | (media)  |(private) | (private) |
++-------------------------+----------------------+---------+-----------+---------+-----------+
+|                                                |                                           |
+|                   RAID6 (mdadm)                |                                           |
+|                                                |                                           |
++---------+---------+---------+---------+--------+-------------------------------------------+
+|         |         |         |         |        |                                           |
+|   sdc1  |   sdd1  |   sde1  |   sdf1  |  sdg1  |                  nvme0n1p1                |
+|         |         |         |         |        |                                           |
++---------+---------+---------+---------+--------+-------------------------------------------+
 
 
+ISCSI with cache writeback
 
-
-
-
-
-
-# Files (private + media) — each LV with dedicated cache
-RAID6 mdadm - 5x4TB HDD
-  └─ cryptsetup - encrypt whole space
-       └─ Luks2 - PV: crypt_files + crypt_cache_files
-            ├─ lv_private → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
-            └─ lv_media → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
-
-
-# ISCSI — dedicated array for ISCSI with cache
-RAID1 mdadm - 2x500G HDD
-  └─ cryptsetup - encrypt whole space
-       └─ Luks2 - PV: crypt_iscsi + crypt_cache_iscsi
-            └─ lv_iscsi → backstore=block (LIO) + dm-cache (NVMe, writeback)
++--------------------+-------------------+
+|                                        |
+|                  XFS                   |
+|                                        |
++-------------------+--------------------+
+|                   |         |          | 
+|     LVM iscsi     |  cache  | metadata |
+|                   |         |          |
++-------------------+--------------------+
+|                   |                    |
+|    RAID1 (mdadm)  |                    |
+|                   |                    |
++---------+---------+--------------------+
+|         |         |                    |
+|   sda1  |   sdb1  |     nvme0n1p2      |
+|         |         |                    |
++---------+---------+--------------------+
 ```
 
 - `writethrough` - Writes go to both the cache device and the origin device simultaneously; reads can be served from cache. Improves read performance and is safe against cache failure, but write performance is roughly the same as without caching.
@@ -1311,8 +1335,10 @@ RAID1 mdadm - 2x500G HDD
 
 ##### RAID6 - prepare disk
 
-- `GPT` - partition table
-- `Linux RAID` - parition type
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- OS parition needs be `Linux RAID`
 - minimum 4 disk
 
 ```bash
@@ -1330,8 +1356,10 @@ Device     Start        End    Sectors  Size Type
 
 ##### RAID1 - prepare disk
 
-- `GPT` - partition table
-- `Linux RAID` - parition type
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- OS parition needs be `Linux RAID`
 - minimum 2 disk
 
 ```bash
@@ -1791,188 +1819,870 @@ crypt_cache_files    crypt     512     512    512      0
 > Check this [guide](#checklist-before-partitioning) how to change the block size
 > Partitions need to be [recreated](#nvme-cache---prepare-disk)
 
+##### Useful command
+
+Check available space to create another LV
+
+```bash
+vgs
+  VG       #PV #LV #SN Attr    VSize    VFree  
+  vg_files   2   2   0 wz--n--   11.55t  13.98g
+  vg_iscsi   2   1   0 wz--n-- <665.60g <12.60g
+  vg_root    1   1   0 wz--n--  464.74g 214.74g
+```
+
+Check cache with raw result
+
+```bash
+$ lvs -o lv_name,cachemode,cache_policy,chunksize,cache_total_blocks,cache_used_blocks,cache_dirty_blocks vg_files
+
+  LV         CacheMode    CachePolicy Chunk   CacheTotalBlocks CacheUsedBlocks  CacheDirtyBlocks
+  lv_media   writethrough smq         512.00k           614400            31186                0
+  lv_private writethrough smq         512.00k           614400              207                0
+
+```
+
+Where for example `512k x 30851 = 15795712` -> 15G
+
+Check cache with re-calculated value
+
+```bash
+lvs -o lv_name,chunksize,cache_total_blocks,cache_used_blocks --noheadings vg_files | awk '{cs=$2; gsub(/k/,"",cs); used=$4*cs/1024/1024; tot=$3*cs/1024/1024; printf "%s: %.2f/%.2f GiB (%.2f%%)\n",$1,used,tot,(used/tot)*100}'
+
+lv_media: 15.07/300.00 GiB (5.02%)
+lv_private: 0.10/300.00 GiB (0.03%)
+```
+
 #### dm-cache with SSD
+
+TODO: check it
 
 ### BTRFS - File system
 
 #### Media
 
+Format partition with `16k` size of btree nodes
+
 ```bash
 mkfs.btrfs -L media -n 16k /dev/vg_files/lv_media
 ```
+
+Create `media` folder for partition mounting
 
 ```bash
 mkdir /srv/media
 ```
 
+Mount partition
+
 ```bash
 mount /dev/vg_files/lv_media /srv/media
 ```
 
+Create subvolume `@media`
+
 ```bash
 btrfs subvolume create /srv/media/@media
 ```
+
+Get a list of subvolumes
 
 ```bash
 btrfs subvolume list /srv/media
 ID 256 gen 10 top level 5 path @media
 ```
 
+Set default subvolume
+
 ```bash
 btrfs subvolume set-default 256 /srv/media
 ```
 
+Unmount partition, because `media` will be mounted as `subvolume`
+
 ```bash
-UUID=88af8746-217c-4f15-90b7-17b7aabaa113      /srv/media                btrfs     subvol=@media,noatime,compress=zstd,space_cache=v2              0 0
+unmount /srv/media
 ```
+
+Add entry to `/etc/fstab`
+
+```bash
+UUID=88af8746-217c-4f15-90b7-17b7aabaa113  /srv/media   btrfs   subvol=@media,noatime,compress=zstd,space_cache=v2   0 0
+```
+
+Mount all filesystems mentioned in fstab
+
+```bash
+mount -a
+```
+
+> [!TIP]
+> Sometimes is required to run `systemctl daemon-reload`
+
+Enable BTRFS quota
 
 ```bash
 btrfs quota enable 
 ```
 
-snapper now 
-
-```bash
-mkdir /srv/media/.snapshots
-```
-
-TODO: Add FSTAB
-
 #### Private
 
+Format partition with `16k` size of btree nodes
+
 ```bash
-mkfs.btrfs -L files -n 16k /dev/vg_files/lv_private
+mkfs.btrfs -L private -n 16k /dev/vg_files/lv_private
 ```
+
+Create `private` folder for partition mounting
 
 ```bash
 mkdir /srv/private
 ```
 
+Mount partition
+
 ```bash
 mount /dev/vg_files/lv_private /srv/private
 ```
 
+Create subvolume `@private`
+
 ```bash
 btrfs subvolume create /srv/private/@private
 ```
+
+Get a list of subvolumes
 
 ```bash
 btrfs subvolume list /srv/private
 ID 256 gen 10 top level 5 path @private
 ```
 
+Set default subvolume
+
 ```bash
 btrfs subvolume set-default 256 /srv/private
 ```
 
+Unmount partition, because `private` will be mounted as `subvolume`
+
 ```bash
-mkdir /srv/private/.snapshots
+unmount /srv/private
+```
+
+Add entry to `/etc/fstab`
+
+```bash
+UUID=424d6385-a1e1-48d9-bbf7-7627467be80d  /srv/private  btrfs  subvol=@private,noatime,compress=zstd,space_cache=v2,autodefrag  0 0
+```
+
+Mount all filesystems mentioned in fstab
+
+```bash
+mount -a
+```
+
+> [!TIP]
+> Sometimes is required to run `systemctl daemon-reload`
+
+Enable BTRFS quota
+
+```bash
+btrfs quota enable 
+```
+
+#### Snapshots - snapper
+
+Create snapper config
+
+```bash
+snapper -c private create-config /srv/private
+snapper -c media create-config /srv/media
+```
+
+Modify the configuration (`/etc/snapper/configs`) to get the following results
+
+```bash
+$ snapper -c media get-config
+
+Key                      │ Value
+─────────────────────────┼────────────
+ALLOW_GROUPS             │
+ALLOW_USERS              │ my_user
+BACKGROUND_COMPARISON    │ no
+EMPTY_PRE_POST_CLEANUP   │ yes
+EMPTY_PRE_POST_MIN_AGE   │ 3600
+FREE_LIMIT               │ 0.15
+FSTYPE                   │ btrfs
+NUMBER_CLEANUP           │ yes
+NUMBER_LIMIT             │ 20
+NUMBER_LIMIT_IMPORTANT   │ 10
+NUMBER_MIN_AGE           │ 3600
+QGROUP                   │
+SPACE_LIMIT              │ 0.15
+SUBVOLUME                │ /srv/media
+SYNC_ACL                 │ yes
+TIMELINE_CLEANUP         │ yes
+TIMELINE_CREATE          │ yes
+TIMELINE_LIMIT_DAILY     │ 7
+TIMELINE_LIMIT_HOURLY    │ 0
+TIMELINE_LIMIT_MONTHLY   │ 12
+TIMELINE_LIMIT_QUARTERLY │ 0
+TIMELINE_LIMIT_WEEKLY    │ 4
+TIMELINE_LIMIT_YEARLY    │ 3
+TIMELINE_MIN_AGE         │ 3600
+```
+
+The most important:
+
+- `SPACE_LIMIT="0.15"` - snapshots can take only 15% of space
+- `FREE_LIMIT="0.15"` - always keep 15% of free space
+- `TIMELINE_LIMIT_HOURLY="0"` - do not create hourly snapshot
+- `NUMBER_LIMIT="20"` - limit the number of snapshots
+- `BACKGROUND_COMPARISON="no"` - disabling CPU-consuming background comparison
+- `ALLOW_USERS="my_admin"` - give the `my_user` user the ability to manage the snapshot
+- `SYNC_ACL="yes"` - pass permissions of user `my_user` to snapshot
+
+Enable auto timeline snapshots and cleanup process.
+
+```bash
+systemctl enable snapper-cleanup.timer
+systemctl enable snapper-timeline.timer
+
+systemctl start snapper-cleanup.timer
+systemctl start snapper-timeline.timer
+```
+
+Check timers
+
+```bash
+$ systemctl list-timers 
+
+NEXT                            LEFT LAST                              PASSED UNIT                             ACTIVATES                         
+Sun 2025-11-30 23:00:00 CET    36min Sun 2025-11-30 22:00:05 CET    23min ago snapper-timeline.timer           snapper-timeline.service
+Sun 2025-11-30 23:21:28 CET    57min Sun 2025-11-30 22:21:28 CET 2min 17s ago snapper-cleanup.timer            snapper-cleanup.service
+Mon 2025-12-01 00:00:00 CET 1h 36min Sun 2025-11-30 00:00:02 CET      22h ago shadow.timer                     shadow.service
+Mon 2025-12-01 17:29:20 CET      19h Sun 2025-11-30 17:29:20 CET 4h 54min ago systemd-tmpfiles-clean.timer     systemd-tmpfiles-clean.service
+Wed 2025-12-03 02:40:33 CET   2 days Mon 2025-11-24 09:49:13 CET            - archlinux-keyring-wkd-sync.timer archlinux-keyring-wkd-sync.service
+```
+
+##### Useful command
+
+Command `du` can provide incorrect space usage because of the snapshots implementation
+
+```bash
+$ du -hd1 /srv/media
+
+61G     /srv/media/.snapshots
+5.1G    /srv/media/video
+0       /srv/media/music
+117M    /srv/media/photos
+66G     /srv/media
+```
+
+Check the real space used
+
+```bash
+btrfs filesystem du -s /srv/media
+     Total   Exclusive  Set shared  Filename
+  65.36GiB       0.00B     5.17GiB  /srv/media
+```
+
+Show subvolume status
+
+```bash
+btrfs subvolume show /srv/media/
+@media
+        Name:                   @media
+        UUID:                   bf0a0790-d875-a74b-84ff-d55808da366e
+        Parent UUID:            -
+        Received UUID:          -
+        Creation time:          2025-11-24 08:31:27 +0100
+        Subvolume ID:           256
+        Generation:             106
+        Gen at creation:        10
+        Parent ID:              5
+        Top level ID:           5
+        Flags:                  -
+        Send transid:           0
+        Send time:              2025-11-24 08:31:27 +0100
+        Receive transid:        0
+        Receive time:           -
+        Snapshot(s):
+                                @media/.snapshots/1/snapshot
+                                @media/.snapshots/2/snapshot
+                                @media/.snapshots/3/snapshot
+                                @media/.snapshots/4/snapshot
+                                @media/.snapshots/5/snapshot
+                                @media/.snapshots/6/snapshot
+                                @media/.snapshots/7/snapshot
+                                @media/.snapshots/8/snapshot
+        Quota group:            0/256
+          Limit referenced:     -
+          Limit exclusive:      -
+          Usage referenced:     5.17GiB
+          Usage exclusive:      16.00KiB
+```
+
+### Disk power managed - hdparm
+
+
+```bash
+# /etc/systemd/system/hdparm-raid5.service
+
+[Unit]
+Description=Set the sleep time for the RAID5
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hdparm -q -S 120 /dev/sdc /dev/sdd /dev/sde /dev/sdf /dev/sdg
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 ```bash
-UUID=424d6385-a1e1-48d9-bbf7-7627467be80d      /srv/private btrfs subvol=@private,noatime,compress=zstd,space_cache=v2,autodefrag 0 0
-UUID=424d6385-a1e1-48d9-bbf7-7627467be80d      /srv/private/.snapshots btrfs subvol=@private-snapshots,noatime,compress=zstd,space_cache=v2 0 0
+# /etc/systemd/system/hdparm-raid1.service
+
+[Unit]
+Description=Set the sleep time for the RAID1
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hdparm -q -S 120 /dev/sda /dev/sdb
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-> [!CAUTION]
-> Remember to umount before mount subvolume `umount /srv/private`
+```bash
+systemctl daemon-reload
+systemctl enable hdparm-raid5.service
+```
+
+Check if disk are sleep
+
+```bash
+check_disk_pm(){
+  for d in /dev/sd[a-g]; do
+     printf "%s: " "$d"; sudo hdparm -C "$d" 2>/dev/null | awk '/state/ {print $4}'
+  done
+}
+```
 
 ## Share files
 
 ### Samba
 
-### DLNA
-
-### Snapshots - snapper
+Install samba package
 
 ```bash
-[root@qnap ~]# snapper -c media create-config /srv/media
-Creating config failed (creating btrfs subvolume .snapshots failed since it already exists).
-[root@qnap ~]# ls -la /srv/
-total 0
-drwxr-xr-x  1 root root  38 Nov 22 23:13 .
-drwxr-xr-x  1 root root 142 Nov 17 00:13 ..
-dr-xr-xr-x  1 root ftp    0 Oct 12 18:21 ftp
-drwxr-xr-x  1 root root   0 Oct 12 18:21 http
-drwxrwsr-x+ 1 root 1000  58 Nov 12 19:22 media
-drwxr-xr-x  1 root root  20 Nov 22 23:52 private
-[root@qnap ~]# snapper -c private create-config /srv/private
-Creating config failed (creating btrfs subvolume .snapshots failed since it already exists).
+pacman -S samba
+```
+
+Configure `/etc/samba/smb.conf`
+
+```bash
+[global]
+   disable netbios = yes
+   server smb transports = 445
+   unix extensions = no
+   aio read size  = 1
+   aio write size = 1
+   use sendfile   = yes
+   vfs objects    = io_uring
+
+   server signing     = default
+   server smb encrypt = desired
+   log level = 1
+   server min protocol = SMB2_10
+
+   idmap config * : backend = tdb
+   idmap config * : range = 200000-2147483647
+
+[media]
+   path = /srv/media
+   read only = no
+   browseable = yes
+
+   vfs objects = io_uring catia fruit streams_xattr
+
+   fruit:encoding          = native
+   fruit:metadata          = stream
+   fruit:resource          = stream
+   fruit:posix_rename      = yes
+   fruit:delete_empty_adfiles = yes
+   ea support              = yes
+   store dos attributes    = yes
+   case sensitive          = auto
+
+   veto files = /.snapshots/
+   valid users = @smb-media
+   force group = +smb-media
+
+   create mask = 0664
+   directory mask = 2775
+   inherit acls = yes
+   inherit permissions = yes
+
+[private]
+   path = /srv/private/%U
+   read only = no
+   browseable = yes
+
+   valid users = %U
+   force user = %U
+   force group = root
+   create mask = 0600
+   directory mask = 0700
+   veto files  = /.snapshots/
+
+   root preexec = /usr/local/sbin/samba-mkdir-private.sh %U
+   root preexec close = yes
+```
+
+Create dedicated `smb-media` group
+
+```bash
+groupadd --users my_user smb-media
+```
+
+```bash
+chgrp smb-media /srv/media
+```
+
+```bash
+chmod 2775 /srv/media
+```
+
+```bash
+setfacl -m g:smb-media:rwx /srv/media
+setfacl -m d:g:smb-media:rwx /srv/media
+```
+TODO: add script
+
+Enable and restart samba service
+
+```bash
+systemctl enable smb.service
+systemctl start smb.service
+```
+
+#### Advertising SAMBA - mDNS
+
+By default, Samba wants to use mDNS through [Avahi](https://wiki.archlinux.org/title/Avahi), and it tries to start it via a [D-BUS](https://wiki.archlinux.org/title/D-Bus) request, so the Avahi service must be [masked](https://wiki.archlinux.org/title/Systemd).
+
+```bash
+systemctl mask avahi-daemon
+```
+
+I promote mDNS via [systemd-resolved](https://wiki.archlinux.org/title/Systemd-resolved).
+
+> [!IMPORTANT]
+> To make `+mDNS` working on interface, add  `MulticastDNS=yes` feature, check this [guide](https://wiki.archlinux.org/title/Systemd-networkd).
+
+```diff
+$ resolvectl
+
+Global
+           Protocols: -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+    resolv.conf mode: stub
+  Current DNS Server: 1.1.1.1
+Fallback DNS Servers: 1.1.1.1
+
+Link 2 (enp13s0)
+    Current Scopes: none
+-        Protocols: -DefaultRoute -LLMNR -mDNS -DNSOverTLS DNSSEC=no/unsupported
++        Protocols: -DefaultRoute -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+     Default Route: no
+
+Link 3 (enp14s0)
+    Current Scopes: none
+-        Protocols: -DefaultRoute -LLMNR -mDNS -DNSOverTLS DNSSEC=no/unsupported
++        Protocols: -DefaultRoute -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+     Default Route: no
+
+Link 4 (enp15s0)
+    Current Scopes: DNS mDNS/IPv4 mDNS/IPv6
+-        Protocols: +DefaultRoute -LLMNR -mDNS -DNSOverTLS DNSSEC=no/unsupported
++        Protocols: -DefaultRoute -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+       DNS Servers: 1.1.1.1
+     Default Route: yes
+```
+
+Create a folder to store the mDNS advertising configuration
+
+```bash
+mkdir -p /etc/systemd/dnssd
+```
+
+```ini
+[Service]
+Name=%H
+Type=_smb._tcp
+Port=445
+TxtText=model=MacPro
+```
+
+Restart systemd-resolved service
+
+```bash
+systemctl restart systemd-resolved
+```
+
+Check the logs if the service does not report any problems
+
+```bash
+journalctl -u systemd-resolved
+```
+
+#### Windows compatibility
+
+Install [wsdd](https://man.archlinux.org/man/extra/wsdd/wsdd.8.en) a daemon for advertising Samba service in Windows home network.
+
+```bash
+pacman -S wsdd
+```
+
+```bash
+systemctl enable wsdd
+systemctl start wsdd
+```
+
+#### Create Samba user
+
+Create UNIX user without home directory and possibility to login
+
+```bash
+useradd -g users -G smb-media -M -s /usr/bin/nologin my_new_user
+```
+
+Validation
+
+```bash
+$ su my_new_user
+This account is currently not available.
+```
+
+Set Samba password for new user
+
+```bash
+smbpasswd -a my_new_user
+```
+
+Show users status
+
+```bash
+pdbedit -L -v
+```
+
+#### NSSWITCH 
+
+#### Useful command
+
+Show processes
+
+```bash
+smbstatus -p
+
+Samba version 4.23.3
+PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              
+----------------------------------------------------------------------------------------------------------------------------------------
+2677    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51942)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2674    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:38898)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2669    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:48760)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2679    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51962)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2701    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:49328)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2697    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:42660)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2660    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:48720)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2678    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51958)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2699    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:42054)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+```
+
+```bash
+smbstatus -S
+
+Service      pid     Machine       Connected at                     Encryption   Signing     
+---------------------------------------------------------------------------------------------
+private      2660    10.5.10.10    Wed Nov 26 17:17:38 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2678    10.5.10.10    Wed Nov 26 17:17:56 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2701    10.5.10.10    Wed Nov 26 17:21:25 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2677    10.5.10.10    Wed Nov 26 17:17:54 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2679    10.5.10.10    Wed Nov 26 17:17:57 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2674    10.5.10.10    Wed Nov 26 17:17:46 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2699    10.5.10.10    Wed Nov 26 17:21:05 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2669    10.5.10.10    Wed Nov 26 17:17:40 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2697    10.5.10.10    Wed Nov 26 17:21:00 2025 CET     AES-128-GCM  AES-128-GMAC
+```
+
+Validate Samba config
+
+```bash
+testparm -s
+```
+
+### DLNA
+
+#### ReadyMedia (MiniDLNA)
+
+DLNA service is provided by [MiniDLNA](https://wiki.archlinux.org/title/ReadyMedia) daemon, which serves media files (music, pictures, and video) to clients on a network.
+
+```bash
+pacman -S minidlna ffmpegthumbnailer
+```
+
+Add configuration
+
+```diff
+# cat /etc/minidlna.conf
+
+port=8200
+
++media_dir=V,/srv/media/video
++media_dir=A,/srv/media/music
++media_dir=P,/srv/media/photos
+
++friendly_name=MyNAS
+
++db_dir=/var/cache/minidlna
+
+# this should be a list of file names to check for when searching for album art
+# note: names should be delimited with a forward slash ("/")
+album_art_names=Cover.jpg/cover.jpg/AlbumArtSmall.jpg/albumartsmall.jpg/AlbumArt.jpg/albumart.jpg/Album.jpg/album.jpg/Folder.jpg/folder.jpg/Thumb.jpg/thumb.jpg
+
++notify_interval=60
+
+# serial and model number the daemon will report to clients
+# in its XML description
+serial=12345678
+model_number=1
+
++minissdpdsocket=/var/run/minissdpd.sock
+```
+
+```bash
+systemctl enable minidlna
+systemctl start minidlna
+```
+
+Unfortunately, minidlna does not generate thumbs on its own, so I use script to generate it.
+This script will skip existing thumbs and will not replace them.
+
+```sh
+#!/usr/bin/env bash
+
+SRC_DIR="/srv/media/video/"
+FORCE=0
+
+if [[ "$1" == "-f" || "$1" == "--force" ]]; then
+  FORCE=1
+  echo "Force mode ON - existing thumbnails will be overwritten."
+fi
+
+find "$SRC_DIR" -type f \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.avi' -o -iname '*.m4v' \) | while read -r f; do
+  dir="$(dirname "$f")"
+  base="$(basename "$f")"
+  name="${base%.*}"
+  thumb="${dir}/${name}.jpg"
+
+  if [[ -f "$thumb" && $FORCE -eq 0 ]]; then
+    echo "Thumbnail already exists for: $f (use -f to overwrite)"
+    continue
+  fi
+
+  echo "Processing: $f"
+
+  ffmpegthumbnailer \
+    -i "$f" \
+    -o "$thumb" \
+    -t 50% \
+    -s 0 \
+    -q 8
+done
+```
+
+Copy this script to `/usr/local/bin/` and add execution rights
+
+```bash
+chmod +x generate_thumbs.sh
+```
+
+`-f` - this switch will replace the current thumbs with new ones
+
+When script finish, execute following command to generate new cache.
+
+```bash
+minidlnad -R
+systemctl restart minidlna
+```
+
+```bash
+Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:1134: warn: Starting MiniDLNA version 1.3.3.
+Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:394: warn: Creating new database at /var/cache/private/minidlna/files.db
+Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:1182: warn: HTTP listening on port 8200
+Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:135: warn: Parsing playlists...
+Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:269: warn: Finished parsing playlists.
+```
+
+#### Gerbera Media Server
+
+[Gerbera](https://gerbera.io/) is an open source UPnP media server with a web interface. Follow this [guide](https://wiki.archlinux.org/title/Gerbera) to install it.
+
+
+```bash
+mkdir -p /var/cache/gerbera
+```
+
+```bash
+chown gerbera:gerbera /var/cache/gerbera
 ```
 
 ## SSD TRIM
 
 ## ISCSI
 
+iSCSI stands for Internet Small Computer System Interface. It is a networking standard that allows the SCSI protocol (traditionally used for connecting local storage devices like hard drives) to be sent over a standard TCP/IP network.
+
+In short, iSCSI allows a server (the initiator) to treat a networked storage device (the target or storage array) as if it were a local, directly attached hard drive.
+
+In this scenario, `fileio` is used because configuring dm-cache for each LVM would be inconvenient
+
+Here is a concise breakdown of common Input/Output (I/O) methods used in storage systems:
+
+- `fileio` - Uses an existing file (e.g., a disk image file) residing on a standard file system partition. Access to the storage is managed through the host operating system's file system layer.
+   Use Case: Easy testing, portability, quick creation of small virtual disk images.
+
+- `block` - Provides direct, raw access to physical disk partitions or entire devices. This method bypasses the host file system for potentially higher performance.
+   Use Case: When combined with LVM (Logical Volume Manager), you can dynamically create and resize volumes, making it easily manageable. This is the standard for high-performance virtual machines.
+
+- `pscsi` - Stands for Pass-through SCSI. It allows the virtual machine to send physical SCSI commands directly to a target hardware device.
+   Use Case: Required when a virtual machine needs specific control over a piece of hardware, such as tape drives, CD/DVD burners, or hardware media changers.
+
+- `ramdisk` - Creates a virtual block device that resides entirely within the computer's RAM (Random Access Memory).
+   Use Case: Provides extremely fast data access (the highest I/O speed available), ideal for temporary files or small caches where speed is critical, and data persistence after power loss is not required.
+
+- `rbd`- Stands for Rados Block Device. It is the native block storage format for the distributed storage system Ceph.
+   Use Case: Used to provide scalable and highly available block storage for virtual machines and containers within large, distributed cloud environments.
+
+### Filesystem
+
+```bash
+pacman -S xfsprogs
+```
+
+```bash
+mkfs.xfs /dev/vg_iscsi/lv_iscsi
+```
+
+```diff
+# /etc/fstab
+
++UUID=479667cf-7bdd-4362-8db4-32e516ba4f69  /srv/iscsi  xfs  defaults,noatime  0 0
+```
+
+Use `fstabfmt` for auto formatting `fstab` file
+
+```bash
+fstabfmt -i /etc/fstab
+```
+
+### Configuration
+
+```bash
+pacman -S targetcli-fb
+```
+
+Missing `target.service`
+
+Set up basic configuration.
+
+```bash
+$ targetcli
+
+/> iscsi/
+/iscsi> create iqn.2025-11.local.qnap:iscsi
+/iscsi> iqn.2025-11.local.qnap:iscsi/tpg1/
+
+/iscsi/iqn.20...ap:iscsi/tpg1> set attribute authentication=1
+/iscsi/iqn.20...ap:iscsi/tpg1> set auth userid=my_user
+/iscsi/iqn.20...ap:iscsi/tpg1> set auth password=my_pass
+
+/iscsi/iqn.20...ap:iscsi/tpg1> /
+/> saveconfig
+Configuration saved to /etc/target/saveconfig.json
+```
+
+#### ACL
+
+Dynamic
+
+```bash
+/iscsi/iqn.20...ap:iscsi/tpg1> set attribute generate_node_acls=1
+/iscsi/iqn.20...ap:iscsi/tpg1> set attribute cache_dynamic_acls=1
+```
+
+#### Volume
+
+Create a file to be used as a volume
+
+```bash
+fallocate -l 10G /srv/iscsi/paperless.img
+```
+
+```bash
+targetcli
+
+/> backstores/fileio
+/backstores/fileio> create name=paperless file_or_dev=/srv/iscsi/paperless.img
+Created fileio paperless with size 10737418240
+
+/backstores/fileio> ls
+o- fileio .................................................................................. [Storage Objects: 1]
+  o- paperless ...................................... [/srv/iscsi/paperless.img (10.0GiB) write-back deactivated]
+    o- alua .................................................................................... [ALUA Groups: 1]
+      o- default_tg_pt_gp ........................................................ [ALUA state: Active/optimized]
+
+
+/> /iscsi/iqn.2025-11.local.qnap:iscsi/tpg1/luns
+/iscsi/iqn.20...csi/tpg1/luns> create /backstores/fileio/paperless
+
+/iscsi/iqn.20...csi/tpg1/luns> ls
+o- luns .................................................................................................................. [LUNs: 1]
+  o- lun0 ......................................................... [fileio/paperless (/srv/iscsi/paperless.img) (default_tg_pt_gp)]
+
+/iscsi/iqn.20...csi/tpg1/luns> /
+/> saveconfig 
+Configuration saved to /etc/target/saveconfig.json
+/> exit
+```
+
+#### Login
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --login
+```
+
+If you forget to set up credentials
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --op update -n node.session.auth.authmethod -v CHAP
+```
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --op update -n node.session.auth.username -v my_user
+```
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --op update -n node.session.auth.password -v my_pass
+```
+
+Now you can access volume, remember to format it.
+
+
 ## UPS
 
 ## ACPI custom DSDT
 
 
-## TODO
-
-
-
-- AES-NI ?
-10:00.2 Encryption controller: Advanced Micro Devices, Inc. [AMD] Raven/Raven2/FireFlight/Renoir/Cezanne Platform Security Processor
-
-- pushover
-
-- network onyl 100M
-0d:00.0 Ethernet controller: Aquantia Corp. AQtion AQC107 NBase-T/IEEE 802.3an Ethernet Controller [Atlantic 10G] (rev 02)
-
-- bonnie++
-
-[   10.669637] ee1004 3-0050: probe with driver ee1004 failed with error -5
-https://www.spinics.net/lists/linux-i2c/msg32331.html
-
-
-Optional dependencies for libsecret
-    org.freedesktop.secrets: secret storage backend
-
-
-ystemd-ukify: combine kernel and initrd into a signed Unified Kernel Image
-
-:: Proceed with installation? [Y/n] 
-:: Retrieving packages...
- thin-provisioning-tools-1.3.0-1-x86_64                                                           1109.5 KiB  3.97 MiB/s 00:00 [############################################################################] 100%
-(1/1) checking keys in keyring                                                                                                 [############################################################################] 100%
-(1/1) checking package integrity                                                                                               [############################################################################] 100%
-(1/1) loading package files                                                                                                    [############################################################################] 100%
-(1/1) checking for file conflicts                                                                                              [############################################################################] 100%
-(1/1) checking available disk space                                                                                            [############################################################################] 100%
-:: Processing package changes...
-(1/1) installing thin-provisioning-tools                                                                                       [############################################################################] 100%
-:: Running post-transaction hooks...
-(1/1) Arming ConditionNeedsUpdate...
-[root@archiso boot]# mkinitcpio -P
-==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
-==> Using default configuration file: '/etc/mkinitcpio.conf'
-  -> -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
-==> Starting build: '6.17.8-arch1-1'
-  -> Running build hook: [base]
-  -> Running build hook: [systemd]
-  -> Running build hook: [btrfs]
-  -> Running build hook: [autodetect]
-  -> Running build hook: [microcode]
-  -> Running build hook: [modconf]
-  -> Running build hook: [kms]
-  -> Running build hook: [keyboard]
-  -> Running build hook: [sd-vconsole]
-  -> Running build hook: [block]
-  -> Running build hook: [mdadm_udev]
-  -> Running build hook: [sd-encrypt]
-==> WARNING: Possibly missing firmware for module: 'qat_6xxx'
-  -> Running build hook: [lvm2]
-sed: can't read /etc/lvm/lvm.conf: No such file or directory
-  -> Running build hook: [filesystems]
-  -> Running build hook: [fsck]
-==> Generating module dependencies
-==> Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
-  -> Early uncompressed CPIO image generation successful
-==> Initcpio image generation successful
-
-
-thin-provisioning-tools
-
-Please enter passphrase or recovery key for disk KINGSTON SNV3S500G (luks-7f0cc063-e383-4244-b4cb-12e6c396947f): (press TAB for no echo) [   11.785057] scsi 34:0:0:0: Direct-Access              USB DISK MODULE  PMAP PQ: 0 ANSI: 6
