@@ -1259,11 +1259,11 @@ After switching the UART to polling mode, agetty works correctly, there is no ne
 ### Disk Topology
 
 ```bash
-+----------+----------+----------------------+-------------------------------------------+
-|subvolume |subvolume |subvolume |subvolume  |                                           |
-|  @media  |@snapshot | @private |@snapshot  |                                           |
-|          |          |          |           |                                           |
-+----------+----------+----------+-----------+-------------------------------------------+
++-----------+-----------+------------------------+-------------------------------------------+
+| subvolume | subvolume | subvolume | subvolume  |                                           |
+|   @media  | @snapshot |  @private | @snapshot  |                                           |
+|           |           |           |            |                                           |
++-----------+-----------+-----------+------------+-------------------------------------------+
 |                                                                                        |
 |                                          BTRFS                                         |
 |                                                                                        |
