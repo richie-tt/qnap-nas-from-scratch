@@ -915,6 +915,8 @@ yay -S fzf-marks \
   zsh-theme-powerlevel10k-git
 ```
 
+TODO: validate mkinitcpio-systemd-root-password
+
 #### Configure network
 
 > [!TIP]
@@ -966,7 +968,7 @@ HOOKS=(base systemd btrfs autodetect microcode modconf kms keyboard sd-vconsole 
 - `lvm2` - Adds the device mapper kernel module and the lvm tool to the image.
 
 > [!CAUTION]
-> `sd-resolve` require to create `/etc/hostname`
+> `sd-resolve` require to create `/etc/hostname` -> `echo "qnap" > /etc/hostname`
 >
 > Remember to recreate initramfs `mkinitcpio -p linux`
 
@@ -1006,7 +1008,7 @@ ls -la /etc/resolv.conf
 lrwxrwxrwx 1 root root 37 Nov 24 09:33 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
 ```
 
-if not fix it with following command 
+if not, fix it with the following command
 
 ```bash
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
@@ -1214,7 +1216,7 @@ Manually step validation
    1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
    ```
 
-2. Switch `IRQ 4` to `IRQ 0` (pooling mode)
+2. Switch `IRQ 4` to `IRQ 0` (polling mode)
 
    ```bash
    setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0
@@ -1250,13 +1252,42 @@ ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyS0", ATTR{device/power/control}="on
 
 #### Agetty with UART
 
-After switching UART to polling mode, agetty is working correctly, no needs to modify service.
+After switching the UART to polling mode, agetty works correctly, there is no need to modify the service.
 
 ## NAS Server
 
 ### Disk Topology
 
 ```bash
++----------+----------+----------------------+-------------------------------------------+
+|subvolume |subvolume |subvolume |subvolume  |                                           |
+|  @media  |@snapshot | @private |@snapshot  |                                           |
+|          |          |          |           |                                           |
++----------+----------+----------+-----------+-------------------------------------------+
+|                                                                                        |
+|                                          BTRFS                                         |
+|                                                                                        |
++---------------------+----------------------+---------+-----------+---------+-----------+
+|                     |                      |         |           |         |           |
+|      LVM media      |      LVM private     |  cache  |  metadata |  cache  |  metadata |
+|                     |                      | (media) |  (media)  |(private)| (private) |
++---------------------+----------------------+---------+-----------+---------+-----------+
+|                                            |                                           |
+|                 RAID6 (mdadm)              |                                           |
+|                                            |                                           |
++--------+--------+--------+--------+--------+-------------------------------------------+
+|        |        |        |        |        |                                           |
+|  sdc1  |  sdd1  |  sde1  |  sdf1  |  sdg1  |                  nvme0n1p1                |
+|        |        |        |        |        |                                           |
++--------+--------+--------+--------+--------+-------------------------------------------+
+
+
+
+
+
+
+
+
 # Files (private + media) — each LV with dedicated cache
 RAID6 mdadm - 5x4TB HDD
   └─ cryptsetup - encrypt whole space
