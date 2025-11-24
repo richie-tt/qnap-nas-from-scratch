@@ -1264,43 +1264,45 @@ After switching the UART to polling mode, agetty works correctly, there is no ne
 |   @media  | @snapshot |  @private | @snapshot  |                                           |
 |           |           |           |            |                                           |
 +-----------+-----------+-----------+------------+-------------------------------------------+
-|                                                                                        |
-|                                          BTRFS                                         |
-|                                                                                        |
-+---------------------+----------------------+---------+-----------+---------+-----------+
-|                     |                      |         |           |         |           |
-|      LVM media      |      LVM private     |  cache  |  metadata |  cache  |  metadata |
-|                     |                      | (media) |  (media)  |(private)| (private) |
-+---------------------+----------------------+---------+-----------+---------+-----------+
-|                                            |                                           |
-|                 RAID6 (mdadm)              |                                           |
-|                                            |                                           |
-+--------+--------+--------+--------+--------+-------------------------------------------+
-|        |        |        |        |        |                                           |
-|  sdc1  |  sdd1  |  sde1  |  sdf1  |  sdg1  |                  nvme0n1p1                |
-|        |        |        |        |        |                                           |
-+--------+--------+--------+--------+--------+-------------------------------------------+
+|                                                                                            |
+|                                              BTRFS                                         |
+|                                                                                            |
++-------------------------+----------------------+---------+-----------+---------+-----------+
+|                         |                      |         |          |          |           |
+|         LVM media       |      LVM private     |  cache  | metadata |  cache   |  metadata |
+|                         |                      | (media) | (media)  |(private) | (private) |
++-------------------------+----------------------+---------+-----------+---------+-----------+
+|                                                |                                           |
+|                   RAID6 (mdadm)                |                                           |
+|                                                |                                           |
++---------+---------+---------+---------+--------+-------------------------------------------+
+|         |         |         |         |        |                                           |
+|   sdc1  |   sdd1  |   sde1  |   sdf1  |  sdg1  |                  nvme0n1p1                |
+|         |         |         |         |        |                                           |
++---------+---------+---------+---------+--------+-------------------------------------------+
 
 
-
-
-
-
-
-
-# Files (private + media) — each LV with dedicated cache
-RAID6 mdadm - 5x4TB HDD
-  └─ cryptsetup - encrypt whole space
-       └─ Luks2 - PV: crypt_files + crypt_cache_files
-            ├─ lv_private → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
-            └─ lv_media → Btrfs (-n 16k) + Snapper + dm-cache (NVMe, writethrough)
-
-
-# ISCSI — dedicated array for ISCSI with cache
-RAID1 mdadm - 2x500G HDD
-  └─ cryptsetup - encrypt whole space
-       └─ Luks2 - PV: crypt_iscsi + crypt_cache_iscsi
-            └─ lv_iscsi → backstore=block (LIO) + dm-cache (NVMe, writeback)
++-----------+-----------+----------------+
+| subvolume | subvolume |                |
+|   @iscsi  | @snapshot |                |
+|           |           |                |
++-----------+-----------+----------------+
+|                                        |
+|                 BTRFS                  |
+|                                        |
++-------------------+--------------------+
+|                   |         |          | 
+|     LVM iscsi     |  cache  | metadata |
+|                   |         |          |
++-------------------+--------------------+
+|                   |                    |
+|    RAID1 (mdadm)  |                    |
+|                   |                    |
++---------+---------+--------------------+
+|         |         |                    |
+|   sda1  |   sdb1  |     nvme0n1p2      |
+|         |         |                    |
++---------+---------+--------------------+
 ```
 
 - `writethrough` - Writes go to both the cache device and the origin device simultaneously; reads can be served from cache. Improves read performance and is safe against cache failure, but write performance is roughly the same as without caching.
@@ -1311,8 +1313,10 @@ RAID1 mdadm - 2x500G HDD
 
 ##### RAID6 - prepare disk
 
-- `GPT` - partition table
-- `Linux RAID` - parition type
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- OS parition needs be `Linux RAID`
 - minimum 4 disk
 
 ```bash
@@ -1330,8 +1334,10 @@ Device     Start        End    Sectors  Size Type
 
 ##### RAID1 - prepare disk
 
-- `GPT` - partition table
-- `Linux RAID` - parition type
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- OS parition needs be `Linux RAID`
 - minimum 2 disk
 
 ```bash
