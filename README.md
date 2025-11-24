@@ -1259,11 +1259,13 @@ After switching the UART to polling mode, agetty works correctly, there is no ne
 ### Disk Topology
 
 ```bash
-+-----------+-----------+------------------------+-------------------------------------------+
-| subvolume | subvolume | subvolume | subvolume  |                                           |
-|   @media  | @snapshot |  @private | @snapshot  |                                           |
-|           |           |           |            |                                           |
-+-----------+-----------+-----------+------------+-------------------------------------------+
+Media & Private with cache writethrough
+
++----------------------+----------------------+----------------------+-----------------------+
+|      subvolume       |       subvolume      |       subvolume      |       subvolume       |
+|        @media        |       @snapshot      |        @private      |       @snapshot       |
+|                      |                      |                      |                       |
++----------------------+----------------------+----------------------+-----------------------+
 |                                                                                            |
 |                                              BTRFS                                         |
 |                                                                                            |
@@ -1282,11 +1284,13 @@ After switching the UART to polling mode, agetty works correctly, there is no ne
 +---------+---------+---------+---------+--------+-------------------------------------------+
 
 
-+-----------+-----------+----------------+
-| subvolume | subvolume |                |
-|   @iscsi  | @snapshot |                |
-|           |           |                |
-+-----------+-----------+----------------+
+ISCSI with cache writeback
+
++--------------------+-------------------+
+|     subvolume      |     subvolume     |
+|      @iscsi        |     @snapshot     |
+|                    |                   |
++--------------------+-------------------+
 |                                        |
 |                 BTRFS                  |
 |                                        |
