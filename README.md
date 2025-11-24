@@ -1807,46 +1807,69 @@ crypt_cache_files    crypt     512     512    512      0
 
 #### Media
 
+Format partition with `16k` size of btree nodes.
+
 ```bash
 mkfs.btrfs -L media -n 16k /dev/vg_files/lv_media
 ```
+
+Create `media` folder for partition mounting
 
 ```bash
 mkdir /srv/media
 ```
 
+Mount partition
+
 ```bash
 mount /dev/vg_files/lv_media /srv/media
 ```
 
+Create subvolume `@media`
+
 ```bash
 btrfs subvolume create /srv/media/@media
 ```
+
+Get list subvolume
 
 ```bash
 btrfs subvolume list /srv/media
 ID 256 gen 10 top level 5 path @media
 ```
 
+Set default subvolume
+
 ```bash
 btrfs subvolume set-default 256 /srv/media
 ```
 
+Unmount partition
+
 ```bash
-UUID=88af8746-217c-4f15-90b7-17b7aabaa113      /srv/media                btrfs     subvol=@media,noatime,compress=zstd,space_cache=v2              0 0
+unmount /srv/media
 ```
+
+Add entry to `/etc/fstab`
+
+```bash
+UUID=88af8746-217c-4f15-90b7-17b7aabaa113  /srv/media   btrfs   subvol=@media,noatime,compress=zstd,space_cache=v2   0 0
+```
+
+Mount all filesystems mentioned in fstab
+
+```bash
+mount -a
+```
+
+> [!TIP]
+> Sometimes is required to run `systemctl daemon-reload`
+
+Enable BTRFS quota
 
 ```bash
 btrfs quota enable 
 ```
-
-snapper now 
-
-```bash
-mkdir /srv/media/.snapshots
-```
-
-TODO: Add FSTAB
 
 #### Private
 
