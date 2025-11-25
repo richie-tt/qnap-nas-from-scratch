@@ -74,15 +74,20 @@
     - [BTRFS - File system](#btrfs---file-system)
       - [Media](#media)
       - [Private](#private)
+      - [Snapshots - snapper](#snapshots---snapper)
+        - [Useful command](#useful-command-1)
+      - [Disk power managed - hdparm](#disk-power-managed---hdparm)
   - [Share files](#share-files)
     - [Samba](#samba)
+      - [Advertising SAMBA - mDNS](#advertising-samba---mdns)
+      - [Windows compatibility](#windows-compatibility)
+      - [Create Samba user](#create-samba-user)
+      - [NSSWITCH](#nsswitch)
     - [DLNA](#dlna)
-    - [Snapshots - snapper](#snapshots---snapper)
   - [SSD TRIM](#ssd-trim)
   - [ISCSI](#iscsi-1)
   - [UPS](#ups)
   - [ACPI custom DSDT](#acpi-custom-dsdt)
-  - [TODO](#todo)
 
 ## Board
 
@@ -869,6 +874,7 @@ pacman -S acpi \
   mdadm \
   minidlna \
   nvme-cli \
+  ranger \
   samba \
   smartmontools \
   snapper \
@@ -934,6 +940,7 @@ Type=ether
 DHCP=ipv4
 LLDP=true
 EmitLLDP=yes
+MulticastDNS=yes
 
 [DHCPv4]
 ClientIdentifier=mac
@@ -1876,7 +1883,7 @@ btrfs quota enable
 Format partition with `16k` size of btree nodes
 
 ```bash
-mkfs.btrfs -L files -n 16k /dev/vg_files/lv_private
+mkfs.btrfs -L private -n 16k /dev/vg_files/lv_private
 ```
 
 Create `private` folder for partition mounting
@@ -1937,28 +1944,334 @@ Enable BTRFS quota
 btrfs quota enable 
 ```
 
+#### Snapshots - snapper
+
+Create snapper config
+
+```bash
+snapper -c private create-config /srv/private
+snapper -c media create-config /srv/media
+```
+
+Modify the configuration (`/etc/snapper/configs`) to get the following results
+
+```bash
+$ snapper -c media get-config
+
+Key                      │ Value
+─────────────────────────┼────────────
+ALLOW_GROUPS             │
+ALLOW_USERS              │ my_user
+BACKGROUND_COMPARISON    │ no
+EMPTY_PRE_POST_CLEANUP   │ yes
+EMPTY_PRE_POST_MIN_AGE   │ 3600
+FREE_LIMIT               │ 0.15
+FSTYPE                   │ btrfs
+NUMBER_CLEANUP           │ yes
+NUMBER_LIMIT             │ 20
+NUMBER_LIMIT_IMPORTANT   │ 10
+NUMBER_MIN_AGE           │ 3600
+QGROUP                   │
+SPACE_LIMIT              │ 0.15
+SUBVOLUME                │ /srv/media
+SYNC_ACL                 │ yes
+TIMELINE_CLEANUP         │ yes
+TIMELINE_CREATE          │ yes
+TIMELINE_LIMIT_DAILY     │ 7
+TIMELINE_LIMIT_HOURLY    │ 0
+TIMELINE_LIMIT_MONTHLY   │ 12
+TIMELINE_LIMIT_QUARTERLY │ 0
+TIMELINE_LIMIT_WEEKLY    │ 4
+TIMELINE_LIMIT_YEARLY    │ 3
+TIMELINE_MIN_AGE         │ 3600
+```
+
+The most important:
+
+- `SPACE_LIMIT="0.15"` - snapshots can take only 15% of space
+- `FREE_LIMIT="0.15"` - always keep 15% of free space
+- `TIMELINE_LIMIT_HOURLY="0"` - do not create hourly snapshot
+- `NUMBER_LIMIT="20"` - limit the number of snapshots
+- `BACKGROUND_COMPARISON="no"` - disabling CPU-consuming background comparison
+- `ALLOW_USERS="my_admin"` - give the `my_user` user the ability to manage the snapshot
+- `SYNC_ACL="yes"` - pass permissions of user `my_user` to snapshot
+
+##### Useful command
+
+Command `du` can provide incorrect space usage because of the snapshots implementation
+
+```bash
+$ du -hd1 /srv/media
+
+61G     /srv/media/.snapshots
+5.1G    /srv/media/video
+0       /srv/media/music
+117M    /srv/media/photos
+66G     /srv/media
+```
+
+Check the real space used
+
+```bash
+btrfs filesystem du -s /srv/media
+     Total   Exclusive  Set shared  Filename
+  65.36GiB       0.00B     5.17GiB  /srv/media
+```
+
+Show subvolume status
+
+```bash
+btrfs subvolume show /srv/media/
+@media
+        Name:                   @media
+        UUID:                   bf0a0790-d875-a74b-84ff-d55808da366e
+        Parent UUID:            -
+        Received UUID:          -
+        Creation time:          2025-11-24 08:31:27 +0100
+        Subvolume ID:           256
+        Generation:             106
+        Gen at creation:        10
+        Parent ID:              5
+        Top level ID:           5
+        Flags:                  -
+        Send transid:           0
+        Send time:              2025-11-24 08:31:27 +0100
+        Receive transid:        0
+        Receive time:           -
+        Snapshot(s):
+                                @media/.snapshots/1/snapshot
+                                @media/.snapshots/2/snapshot
+                                @media/.snapshots/3/snapshot
+                                @media/.snapshots/4/snapshot
+                                @media/.snapshots/5/snapshot
+                                @media/.snapshots/6/snapshot
+                                @media/.snapshots/7/snapshot
+                                @media/.snapshots/8/snapshot
+        Quota group:            0/256
+          Limit referenced:     -
+          Limit exclusive:      -
+          Usage referenced:     5.17GiB
+          Usage exclusive:      16.00KiB
+```
+
+#### Disk power managed - hdparm
+
+TODO: Need to validation and optimization
+
+```bash
+# /etc/hdparm.conf
+
+/dev/sdc { apm = 127 spindown_time = 120 }
+/dev/sdd { apm = 127 spindown_time = 120 }
+/dev/sde { apm = 127 spindown_time = 120 }
+/dev/sdf { apm = 127 spindown_time = 120 }
+/dev/sdg { apm = 127 spindown_time = 120 }
+```
+
+```bash
+DEVICESCAN -n standby -s (S/../.././11) -a -m root
+```
+
 ## Share files
 
 ### Samba
 
-### DLNA
-
-### Snapshots - snapper
+Install samba package
 
 ```bash
-[root@qnap ~]# snapper -c media create-config /srv/media
-Creating config failed (creating btrfs subvolume .snapshots failed since it already exists).
-[root@qnap ~]# ls -la /srv/
-total 0
-drwxr-xr-x  1 root root  38 Nov 22 23:13 .
-drwxr-xr-x  1 root root 142 Nov 17 00:13 ..
-dr-xr-xr-x  1 root ftp    0 Oct 12 18:21 ftp
-drwxr-xr-x  1 root root   0 Oct 12 18:21 http
-drwxrwsr-x+ 1 root 1000  58 Nov 12 19:22 media
-drwxr-xr-x  1 root root  20 Nov 22 23:52 private
-[root@qnap ~]# snapper -c private create-config /srv/private
-Creating config failed (creating btrfs subvolume .snapshots failed since it already exists).
+pacman -S samba
 ```
+
+Configure `/etc/samba/smb.conf`
+
+```bash
+[global]
+   disable netbios = yes
+   server smb transports = 445
+
+   aio read size  = 1
+   aio write size = 1
+   use sendfile   = yes
+   vfs objects    = io_uring
+
+   server signing     = default
+   server smb encrypt = desired
+   log level = 1
+
+[media]
+   path = /srv/media
+   read only = no
+   browseable = yes
+
+   veto files = /.snapshots/
+
+   valid users = @smb-media
+   force group = +smb-media
+
+   create mask = 0664
+   directory mask = 2775
+   inherit acls = yes
+   inherit permissions = yes
+
+[private]
+   path = /srv/private/%U
+   read only = no
+   veto files = /.snapshots/
+   valid users = %U
+   force user = %U
+   force group = root
+   create mask = 0600
+   directory mask = 0700
+   browseable = yes
+
+   root preexec = /usr/local/sbin/samba-mkdir-private %U
+   root preexec close = yes
+```
+
+Create dedicated `smb-media` group
+
+```bash
+groupadd --users my_user smb-media
+```
+
+```bash
+chgrp smb-media /srv/media
+```
+
+```bash
+chmod 2775 /srv/media
+```
+
+```bash
+setfacl -m g:smb-media:rwx /srv/media
+setfacl -m d:g:smb-media:rwx /srv/media
+```
+TODO: add script
+
+Enable and restart samba service
+
+```bash
+systemctl enable smb.service
+systemctl start smb.service
+```
+
+#### Advertising SAMBA - mDNS
+
+By default, Samba wants to use mDNS through [Avahi](https://wiki.archlinux.org/title/Avahi), and it tries to start it via a [D-BUS](https://wiki.archlinux.org/title/D-Bus) request, so the Avahi service must be [masked](https://wiki.archlinux.org/title/Systemd).
+
+```bash
+systemctl mask avahi-daemon
+```
+
+I promote mDNS via [systemd-resolved](https://wiki.archlinux.org/title/Systemd-resolved).
+
+> [!IMPORTANT]
+> To make `+mDNS` working on interface, add  `MulticastDNS=yes` feature, check this [guide](https://wiki.archlinux.org/title/Systemd-networkd).
+
+```diff
+$ resolvectl
+
+Global
+           Protocols: -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+    resolv.conf mode: stub
+  Current DNS Server: 1.1.1.1
+Fallback DNS Servers: 1.1.1.1
+
+Link 2 (enp13s0)
+    Current Scopes: none
+-        Protocols: -DefaultRoute -LLMNR -mDNS -DNSOverTLS DNSSEC=no/unsupported
++        Protocols: -DefaultRoute -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+     Default Route: no
+
+Link 3 (enp14s0)
+    Current Scopes: none
+-        Protocols: -DefaultRoute -LLMNR -mDNS -DNSOverTLS DNSSEC=no/unsupported
++        Protocols: -DefaultRoute -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+     Default Route: no
+
+Link 4 (enp15s0)
+    Current Scopes: DNS mDNS/IPv4 mDNS/IPv6
+-        Protocols: +DefaultRoute -LLMNR -mDNS -DNSOverTLS DNSSEC=no/unsupported
++        Protocols: -DefaultRoute -LLMNR +mDNS -DNSOverTLS DNSSEC=no/unsupported
+       DNS Servers: 1.1.1.1
+     Default Route: yes
+```
+
+Create a folder to store the mDNS advertising configuration
+
+```bash
+mkdir -p /etc/systemd/dnssd
+```
+
+```ini
+[Service]
+Name=%H
+Type=_smb._tcp
+Port=445
+TxtText=model=MacPro
+```
+
+Restart systemd-resolved service
+
+```bash
+systemctl restart systemd-resolved
+```
+
+Check the logs if the service does not report any problems
+
+```bash
+journalctl -u systemd-resolved
+```
+
+#### Windows compatibility
+
+Install [wsdd](https://man.archlinux.org/man/extra/wsdd/wsdd.8.en) a daemon for advertising Samba service in Windows home network.
+
+```bash
+pacman -S wsdd
+```
+
+```bash
+systemctl enable wsdd
+systemctl start wsdd
+```
+
+#### Create Samba user
+
+Create UNIX user without home directory and possibility to login
+
+```bash
+useradd -g users -G smb-media -M -s /usr/bin/nologin my_new_user
+```
+
+Validation
+
+```bash
+$ su my_new_user
+This account is currently not available.
+```
+
+Set Samba password for new user
+
+```bash
+smbpasswd -a my_new_user
+```
+
+Show users status
+
+```bash
+pdbedit -L -v
+```
+
+#### NSSWITCH 
+
+
+### DLNA
+
+```bash
+pacman -S minidlna
+```
+
 
 ## SSD TRIM
 
@@ -1969,70 +2282,3 @@ Creating config failed (creating btrfs subvolume .snapshots failed since it alre
 ## ACPI custom DSDT
 
 
-## TODO
-
-
-
-- AES-NI ?
-10:00.2 Encryption controller: Advanced Micro Devices, Inc. [AMD] Raven/Raven2/FireFlight/Renoir/Cezanne Platform Security Processor
-
-- pushover
-
-- network onyl 100M
-0d:00.0 Ethernet controller: Aquantia Corp. AQtion AQC107 NBase-T/IEEE 802.3an Ethernet Controller [Atlantic 10G] (rev 02)
-
-- bonnie++
-
-[   10.669637] ee1004 3-0050: probe with driver ee1004 failed with error -5
-https://www.spinics.net/lists/linux-i2c/msg32331.html
-
-
-Optional dependencies for libsecret
-    org.freedesktop.secrets: secret storage backend
-
-
-ystemd-ukify: combine kernel and initrd into a signed Unified Kernel Image
-
-:: Proceed with installation? [Y/n] 
-:: Retrieving packages...
- thin-provisioning-tools-1.3.0-1-x86_64                                                           1109.5 KiB  3.97 MiB/s 00:00 [############################################################################] 100%
-(1/1) checking keys in keyring                                                                                                 [############################################################################] 100%
-(1/1) checking package integrity                                                                                               [############################################################################] 100%
-(1/1) loading package files                                                                                                    [############################################################################] 100%
-(1/1) checking for file conflicts                                                                                              [############################################################################] 100%
-(1/1) checking available disk space                                                                                            [############################################################################] 100%
-:: Processing package changes...
-(1/1) installing thin-provisioning-tools                                                                                       [############################################################################] 100%
-:: Running post-transaction hooks...
-(1/1) Arming ConditionNeedsUpdate...
-[root@archiso boot]# mkinitcpio -P
-==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
-==> Using default configuration file: '/etc/mkinitcpio.conf'
-  -> -k /boot/vmlinuz-linux -g /boot/initramfs-linux.img
-==> Starting build: '6.17.8-arch1-1'
-  -> Running build hook: [base]
-  -> Running build hook: [systemd]
-  -> Running build hook: [btrfs]
-  -> Running build hook: [autodetect]
-  -> Running build hook: [microcode]
-  -> Running build hook: [modconf]
-  -> Running build hook: [kms]
-  -> Running build hook: [keyboard]
-  -> Running build hook: [sd-vconsole]
-  -> Running build hook: [block]
-  -> Running build hook: [mdadm_udev]
-  -> Running build hook: [sd-encrypt]
-==> WARNING: Possibly missing firmware for module: 'qat_6xxx'
-  -> Running build hook: [lvm2]
-sed: can't read /etc/lvm/lvm.conf: No such file or directory
-  -> Running build hook: [filesystems]
-  -> Running build hook: [fsck]
-==> Generating module dependencies
-==> Creating zstd-compressed initcpio image: '/boot/initramfs-linux.img'
-  -> Early uncompressed CPIO image generation successful
-==> Initcpio image generation successful
-
-
-thin-provisioning-tools
-
-Please enter passphrase or recovery key for disk KINGSTON SNV3S500G (luks-7f0cc063-e383-4244-b4cb-12e6c396947f): (press TAB for no echo) [   11.785057] scsi 34:0:0:0: Direct-Access              USB DISK MODULE  PMAP PQ: 0 ANSI: 6

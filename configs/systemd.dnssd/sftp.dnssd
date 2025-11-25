@@ -1,0 +1,4 @@
+[Service]
+Name=%H SFTP
+Type=_sftp-ssh._tcp
+Port=22

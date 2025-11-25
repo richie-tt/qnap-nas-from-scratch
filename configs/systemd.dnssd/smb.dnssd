@@ -1,0 +1,5 @@
+[Service]
+Name=%H
+Type=_smb._tcp
+Port=445
+TxtText=model=MacPro

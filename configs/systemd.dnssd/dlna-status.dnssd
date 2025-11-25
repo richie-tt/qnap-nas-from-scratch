@@ -1,0 +1,6 @@
+[Service]
+Name=%H DLNA Status
+Type=_http._tcp
+Port=8200
+; opcjonalnie dopisz ścieżkę jako TXT:
+; TxtText=path=/
