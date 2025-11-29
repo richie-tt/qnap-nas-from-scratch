@@ -5,7 +5,7 @@
     - [Specification](#specification)
     - [UART](#uart)
       - [Investigation](#investigation)
-      - [Useful command](#useful-command)
+      - [Useful debug command](#useful-debug-command)
     - [BIOS](#bios)
       - [Boot order](#boot-order)
   - [Arch installation](#arch-installation)
@@ -70,19 +70,21 @@
         - [Cache ISCSI](#cache-iscsi)
       - [Troubleshooting](#troubleshooting)
         - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
+        - [Useful command](#useful-command)
       - [dm-cache with SSD](#dm-cache-with-ssd)
     - [BTRFS - File system](#btrfs---file-system)
       - [Media](#media)
       - [Private](#private)
       - [Snapshots - snapper](#snapshots---snapper)
         - [Useful command](#useful-command-1)
-      - [Disk power managed - hdparm](#disk-power-managed---hdparm)
+    - [Disk power managed - hdparm](#disk-power-managed---hdparm)
   - [Share files](#share-files)
     - [Samba](#samba)
       - [Advertising SAMBA - mDNS](#advertising-samba---mdns)
       - [Windows compatibility](#windows-compatibility)
       - [Create Samba user](#create-samba-user)
       - [NSSWITCH](#nsswitch)
+      - [Useful command](#useful-command-2)
     - [DLNA](#dlna)
   - [SSD TRIM](#ssd-trim)
   - [ISCSI](#iscsi-1)
@@ -184,7 +186,7 @@ I've spent many hours trying to understand why `UART` works unstable and quickly
 > [!NOTE]
 > In section [UART fix](#uart-fix) is explained how to make polling mode permanent for each boot (`IRQ 4` -> `IRQ 0`)
 
-#### Useful command
+#### Useful debug command
 
 - `cat /proc/tty/driver/serial` - UART status with flags/registry
 - `fuser -v /dev/ttyS0` - shows which process is hanging/using the port, kill all processes with `-k`
@@ -1808,7 +1810,43 @@ crypt_cache_files    crypt     512     512    512      0
 > Check this [guide](#checklist-before-partitioning) how to change the block size
 > Partitions need to be [recreated](#nvme-cache---prepare-disk)
 
+##### Useful command
+
+Check available space to create another LV
+
+```bash
+vgs
+  VG       #PV #LV #SN Attr    VSize    VFree  
+  vg_files   2   2   0 wz--n--   11.55t  13.98g
+  vg_iscsi   2   1   0 wz--n-- <665.60g <12.60g
+  vg_root    1   1   0 wz--n--  464.74g 214.74g
+```
+
+Check cache with raw result
+
+```bash
+$ lvs -o lv_name,cachemode,cache_policy,chunksize,cache_total_blocks,cache_used_blocks,cache_dirty_blocks vg_files
+
+  LV         CacheMode    CachePolicy Chunk   CacheTotalBlocks CacheUsedBlocks  CacheDirtyBlocks
+  lv_media   writethrough smq         512.00k           614400            31186                0
+  lv_private writethrough smq         512.00k           614400              207                0
+
+```
+
+Where for example `512k x 30851 = 15795712` -> 15G
+
+Check cache with re-calculated value
+
+```bash
+lvs -o lv_name,chunksize,cache_total_blocks,cache_used_blocks --noheadings vg_files | awk '{cs=$2; gsub(/k/,"",cs); used=$4*cs/1024/1024; tot=$3*cs/1024/1024; printf "%s: %.2f/%.2f GiB (%.2f%%)\n",$1,used,tot,(used/tot)*100}'
+
+lv_media: 15.07/300.00 GiB (5.02%)
+lv_private: 0.10/300.00 GiB (0.03%)
+```
+
 #### dm-cache with SSD
+
+TODO: check it
 
 ### BTRFS - File system
 
@@ -2054,22 +2092,42 @@ btrfs subvolume show /srv/media/
           Usage exclusive:      16.00KiB
 ```
 
-#### Disk power managed - hdparm
+### Disk power managed - hdparm
 
-TODO: Need to validation and optimization
 
 ```bash
-# /etc/hdparm.conf
+# /etc/systemd/system/hdparm-raid5.service
 
-/dev/sdc { apm = 127 spindown_time = 120 }
-/dev/sdd { apm = 127 spindown_time = 120 }
-/dev/sde { apm = 127 spindown_time = 120 }
-/dev/sdf { apm = 127 spindown_time = 120 }
-/dev/sdg { apm = 127 spindown_time = 120 }
+[Unit]
+Description=Ustawienia hdparm dla dysków NAS
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hdparm -q -S 120 /dev/sdc /dev/sdd /dev/sde /dev/sdf /dev/sdg
+
+[Install]
+WantedBy=multi-user.target
 ```
 
 ```bash
-DEVICESCAN -n standby -s (S/../.././11) -a -m root
+# /etc/systemd/system/hdparm-raid1.service
+
+[Unit]
+Description=Ustawienia hdparm dla dysków NAS
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hdparm -q -S 120 /dev/sda /dev/sdb
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable hdparm-raid5.service
 ```
 
 ## Share files
@@ -2088,7 +2146,7 @@ Configure `/etc/samba/smb.conf`
 [global]
    disable netbios = yes
    server smb transports = 445
-
+   unix extensions = no
    aio read size  = 1
    aio write size = 1
    use sendfile   = yes
@@ -2097,14 +2155,28 @@ Configure `/etc/samba/smb.conf`
    server signing     = default
    server smb encrypt = desired
    log level = 1
+   server min protocol = SMB2_10
+
+   idmap config * : backend = tdb
+   idmap config * : range = 200000-2147483647
 
 [media]
    path = /srv/media
    read only = no
    browseable = yes
 
-   veto files = /.snapshots/
+   vfs objects = io_uring catia fruit streams_xattr
 
+   fruit:encoding          = native
+   fruit:metadata          = stream
+   fruit:resource          = stream
+   fruit:posix_rename      = yes
+   fruit:delete_empty_adfiles = yes
+   ea support              = yes
+   store dos attributes    = yes
+   case sensitive          = auto
+
+   veto files = /.snapshots/
    valid users = @smb-media
    force group = +smb-media
 
@@ -2116,15 +2188,16 @@ Configure `/etc/samba/smb.conf`
 [private]
    path = /srv/private/%U
    read only = no
-   veto files = /.snapshots/
+   browseable = yes
+
    valid users = %U
    force user = %U
    force group = root
    create mask = 0600
    directory mask = 0700
-   browseable = yes
+   veto files  = /.snapshots/
 
-   root preexec = /usr/local/sbin/samba-mkdir-private %U
+   root preexec = /usr/local/sbin/samba-mkdir-private.sh %U
    root preexec close = yes
 ```
 
@@ -2265,13 +2338,158 @@ pdbedit -L -v
 
 #### NSSWITCH 
 
+#### Useful command
+
+Show processes
+
+```bash
+smbstatus -p
+
+Samba version 4.23.3
+PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              
+----------------------------------------------------------------------------------------------------------------------------------------
+2677    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51942)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2674    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:38898)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2669    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:48760)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2679    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51962)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2701    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:49328)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2697    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:42660)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2660    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:48720)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2678    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51958)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2699    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:42054)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+```
+
+```bash
+smbstatus -S
+
+Service      pid     Machine       Connected at                     Encryption   Signing     
+---------------------------------------------------------------------------------------------
+private      2660    10.5.10.10    Wed Nov 26 17:17:38 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2678    10.5.10.10    Wed Nov 26 17:17:56 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2701    10.5.10.10    Wed Nov 26 17:21:25 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2677    10.5.10.10    Wed Nov 26 17:17:54 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2679    10.5.10.10    Wed Nov 26 17:17:57 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2674    10.5.10.10    Wed Nov 26 17:17:46 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2699    10.5.10.10    Wed Nov 26 17:21:05 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2669    10.5.10.10    Wed Nov 26 17:17:40 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2697    10.5.10.10    Wed Nov 26 17:21:00 2025 CET     AES-128-GCM  AES-128-GMAC
+```
+
+Validate Samba config
+
+```bash
+testparm -s
+```
 
 ### DLNA
 
+DLNA service is provided by [MiniDLNA](https://wiki.archlinux.org/title/ReadyMedia) daemon, which serves media files (music, pictures, and video) to clients on a network.
+
 ```bash
-pacman -S minidlna
+pacman -S minidlna ffmpegthumbnailer
 ```
 
+Add configuration
+
+```diff
+# cat /etc/minidlna.conf
+
+port=8200
+
++media_dir=V,/srv/media/video
++media_dir=A,/srv/media/music
++media_dir=P,/srv/media/photos
+
++friendly_name=MyNAS
+
++db_dir=/var/cache/minidlna
+
+# this should be a list of file names to check for when searching for album art
+# note: names should be delimited with a forward slash ("/")
+album_art_names=Cover.jpg/cover.jpg/AlbumArtSmall.jpg/albumartsmall.jpg/AlbumArt.jpg/albumart.jpg/Album.jpg/album.jpg/Folder.jpg/folder.jpg/Thumb.jpg/thumb.jpg
+
++notify_interval=60
+
+# serial and model number the daemon will report to clients
+# in its XML description
+serial=12345678
+model_number=1
+
++minissdpdsocket=/var/run/minissdpd.sock
+
+
+#root_container=.
+
+
+# enable subtitle support by default on unknown clients.
+# note: the default is yes
+#enable_subtitles=yes
+
+```
+
+```bash
+systemctl enable minidlna
+systemctl start minidlna
+```
+
+Unfortunately, minidlna does not generate thumbs on its own, so I use script to generate it.
+This script will skip existing thumbs and will not replace them.
+
+```sh
+#!/usr/bin/env bash
+
+SRC_DIR="/srv/media/video/"
+FORCE=0
+
+if [[ "$1" == "-f" || "$1" == "--force" ]]; then
+  FORCE=1
+  echo "Force mode ON - existing thumbnails will be overwritten."
+fi
+
+find "$SRC_DIR" -type f \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.avi' -o -iname '*.m4v' \) | while read -r f; do
+  dir="$(dirname "$f")"
+  base="$(basename "$f")"
+  name="${base%.*}"
+  thumb="${dir}/${name}.jpg"
+
+  if [[ -f "$thumb" && $FORCE -eq 0 ]]; then
+    echo "Thumbnail already exists for: $f (use -f to overwrite)"
+    continue
+  fi
+
+  echo "Processing: $f"
+
+  ffmpegthumbnailer \
+    -i "$f" \
+    -o "$thumb" \
+    -t 50% \
+    -s 0 \
+    -q 8
+done
+```
+
+Copy this script to `/usr/local/bin/` and add execution rights
+
+```bash
+chmod +x generate_thumbs.sh
+```
+
+`-f` - this switch will replace the current thumbs with new ones
+
+When script finish, execute following command to generate new cache.
+
+```bash
+minidlnad -R
+systemctl restart minidlna
+```
+
+```bash
+Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:1134: warn: Starting MiniDLNA version 1.3.3.
+Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:394: warn: Creating new database at /var/cache/private/minidlna/files.db
+Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:1182: warn: HTTP listening on port 8200
+Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:135: warn: Parsing playlists...
+Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:269: warn: Finished parsing playlists.
+```
 
 ## SSD TRIM
 

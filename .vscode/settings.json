@@ -24,6 +24,7 @@
         "cryptsetup",
         "crypttab",
         "databits",
+        "degub",
         "dentry",
         "devel",
         "DEVICESCAN",
