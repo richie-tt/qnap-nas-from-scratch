@@ -33,6 +33,7 @@
       - [Install YAY](#install-yay)
       - [AUR packages](#aur-packages)
       - [Configure network](#configure-network)
+        - [Useful command](#useful-command)
       - [Initramfs image](#initramfs-image)
       - [UEFI boot manager](#uefi-boot-manager)
   - [After first boot](#after-first-boot)
@@ -70,13 +71,12 @@
         - [Cache ISCSI](#cache-iscsi)
       - [Troubleshooting](#troubleshooting)
         - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
-        - [Useful command](#useful-command)
-      - [dm-cache with SSD](#dm-cache-with-ssd)
+        - [Useful command](#useful-command-1)
     - [BTRFS - File system](#btrfs---file-system)
       - [Media](#media)
       - [Private](#private)
       - [Snapshots - snapper](#snapshots---snapper)
-        - [Useful command](#useful-command-1)
+        - [Useful command](#useful-command-2)
     - [Disk power managed - hdparm](#disk-power-managed---hdparm)
   - [Share files](#share-files)
     - [Samba](#samba)
@@ -84,7 +84,7 @@
       - [Windows compatibility](#windows-compatibility)
       - [Create Samba user](#create-samba-user)
       - [NSSWITCH](#nsswitch)
-      - [Useful command](#useful-command-2)
+      - [Useful command](#useful-command-3)
     - [DLNA](#dlna)
       - [ReadyMedia (MiniDLNA)](#readymedia-minidlna)
       - [Gerbera Media Server](#gerbera-media-server)
@@ -977,6 +977,18 @@ RxFlowControl=yes
 TxFlowControl=yes
 ```
 
+##### Useful command
+
+Check flowcontrol
+
+```bash
+ethtool -a nas0                                                                                                                                    ✔  ⚡  66  00:22:53 
+Pause parameters for nas0:
+Autonegotiate:  on
+RX:             on
+TX:             on
+```
+
 #### Initramfs image
 
 Package `mkinitcpio-systemd-extras` will delivery all necessary hooks [sd-clevis](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Clevis), [sd-network](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Networking), [sd-resolve](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Name-Resolution) require auto-unlock root partition via network, please read documentation careful.
@@ -1040,10 +1052,11 @@ options options rd.neednet=1 rd.luks.uuid=7f0cc063-e383-4244-b4cb-12e6c396947f r
 
 #### Resolver
 
-Check if `resolv.conf` is a symnlink
+Check if `resolv.conf` is a symlink
 
 ```bash
-ls -la /etc/resolv.conf 
+$ ls -la /etc/resolv.conf 
+
 lrwxrwxrwx 1 root root 37 Nov 24 09:33 /etc/resolv.conf -> /run/systemd/resolve/stub-resolv.conf
 ```
 
@@ -1133,7 +1146,7 @@ Executing this command one again, will recreate `/etc/vconsole.conf` file
 localectl set-keymap pl2
 ```
 
-```conf
+```bash
 # /etc/vconsole.conf
 
 KEYMAP=pl2
@@ -1146,7 +1159,7 @@ XKBOPTIONS=terminate:ctrl_alt_bksp
 
 #### Network
 
-```conf
+```bash
 # /etc/sysctl.d/99-nas-net.conf
 
 net.core.rmem_max = 134217728
@@ -1192,7 +1205,7 @@ net.ipv4.tcp_congestion_control = bbr
 
 #### RAM/IO (cache, inotify)
 
-```conf
+```bash
 # /etc/sysctl.d/99-nas-tuning.conf 
 
 vm.dirty_background_bytes = 1073741824
@@ -1224,7 +1237,7 @@ fs.inotify.max_user_watches = 1048576
 
 #### RAID
 
-```conf
+```bash
 # /etc/sysctl.d/99-md-raid.conf
 
 dev.raid.speed_limit_min = 50000
@@ -1279,7 +1292,7 @@ Manually step validation
 
 To apply these changes automatically on every boot, create following `udev` rule:
 
-```conf
+```bash
 # /etc/udev/rules.d/99-ttyS0-nopm.rules
 
 KERNEL=="ttyS0", RUN+="/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0"
@@ -1327,7 +1340,7 @@ ISCSI with cache writeback
 
 +--------------------+-------------------+
 |                                        |
-|                  XFS                   |
+|                 BTRFS                  |
 |                                        |
 +-------------------+--------------------+
 |                   |         |          | 
@@ -1435,9 +1448,8 @@ mdadm --create /dev/md0 --level=1 \
   --raid-devices=2 \
   --metadata=1.2 \
   --chunk=256 --bitmap=internal \
-  --name=files \
+  --name=iscsi \
   /dev/sdf1 /dev/sdg1
-
 ```
 
 #### RAID configuration
@@ -1487,7 +1499,7 @@ mdadm --assemble --update=name --name=iscsi /dev/md1 /dev/sda1 /dev/sdb1
 
 #### RAID optimization
 
-```conf
+```bash
 # /etc/udev/rules.d/99-md-raid.rules
 
 ACTION=="add|change", KERNEL=="md0", ATTR{md/stripe_cache_size}="8192"
@@ -1560,7 +1572,7 @@ pacman -S postfix cyrus-sasl s-nail
 
 Configuration
 
-```conf
+```bash
 # /etc/postfix/main.cf
 
 relayhost = [smtp.gmail.com]:587
@@ -1573,7 +1585,7 @@ smtp_sasl_tls_security_options = noanonymous
 
 Password
 
-```conf
+```bash
 # /etc/postfix/sasl_passwd 
 
 [smtp.gmail.com]:587    <user>@gmail.com:<password>
@@ -1581,7 +1593,7 @@ Password
 
 Encryption map
 
-```conf
+```bash
 # /etc/postfix/tls_policy
 
 [smtp.gmail.com]:587 encrypt
@@ -1870,10 +1882,6 @@ lv_media: 15.07/300.00 GiB (5.02%)
 lv_private: 0.10/300.00 GiB (0.03%)
 ```
 
-#### dm-cache with SSD
-
-TODO: check it
-
 ### BTRFS - File system
 
 #### Media
@@ -2143,6 +2151,7 @@ btrfs subvolume show /srv/media/
 
 ### Disk power managed - hdparm
 
+TODO: add description
 
 ```bash
 # /etc/systemd/system/hdparm-raid5.service
@@ -2177,6 +2186,10 @@ WantedBy=multi-user.target
 ```bash
 systemctl daemon-reload
 systemctl enable hdparm-raid5.service
+systemctl enable hdparm-raid1.service
+
+systemctl start hdparm-raid5.service
+systemctl start hdparm-raid1.service
 ```
 
 Check if disk are sleep after 10 minutes
@@ -2577,7 +2590,7 @@ Here is a concise breakdown of common Input/Output (I/O) methods used in storage
 - `ramdisk` - Creates a virtual block device that resides entirely within the computer's RAM (Random Access Memory).
    Use Case: Provides extremely fast data access (the highest I/O speed available), ideal for temporary files or small caches where speed is critical, and data persistence after power loss is not required.
 
-- `rbd`- Stands for Rados Block Device. It is the native block storage format for the distributed storage system Ceph.
+- `rbd`- Stands for Redos Block Device. It is the native block storage format for the distributed storage system Ceph.
    Use Case: Used to provide scalable and highly available block storage for virtual machines and containers within large, distributed cloud environments.
 
 ### Filesystem
