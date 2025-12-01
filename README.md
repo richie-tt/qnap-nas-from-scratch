@@ -987,6 +987,15 @@ Modules:
 - `igc` - driver for 2.5G ethernet
 - `vfat` - driver to access `boot` partition during boot
 
+Hooks:
+
+- `btrfs` - adding all BTRFS modules, which can be helpful to fix root partition
+- `mdadm_udev` - provide support for assembling RAID arrays via udev
+- `sd-network` - adding support for network
+- `sd-resolve` - adding support for resolving DNS names
+- `sd-clevis` - adding support for clevis
+- `lvm2` - Adds the device mapper kernel module and the lvm tool to the image.
+
 ```bash
 # /etc/mkinitcpio.conf
 
@@ -996,13 +1005,6 @@ MODULES=(atlantic igc ethernet)
 
 HOOKS=(base systemd btrfs autodetect microcode modconf kms keyboard sd-vconsole block mdadm_udev sd-network sd-resolve block sd-clevis sd-encrypt lvm2 filesystems fsck)
 ```
-
-- `btrfs` - adding all BTRFS modules, which can be helpful to fix root partition
-- `mdadm_udev` - provide support for assembling RAID arrays via udev
-- `sd-network` - adding support for network
-- `sd-resolve` - adding support for resolving DNS names
-- `sd-clevis` - adding support for clevis
-- `lvm2` - Adds the device mapper kernel module and the lvm tool to the image.
 
 > [!CAUTION]
 > `sd-resolve` require to create `/etc/hostname` -> `echo "qnap" > /etc/hostname`
