@@ -943,7 +943,7 @@ TODO: validate mkinitcpio-systemd-root-password
 > [!TIP]
 > Read this [guide](https://www.freedesktop.org/software/systemd/man/latest/systemd.network.html) about network configuration via `systemd-networkd`.
 
-```conf
+```bash
 # /etc/systemd/network/10-nic.network 
 
 # Enable DHCPv4 on all physical ethernet links
@@ -983,11 +983,11 @@ Package `mkinitcpio-systemd-extras` will delivery all necessary hooks [sd-clevis
 
 Modules:
 
-`atlantic` - driver for 10G ethernet
-`igc` - driver for 2.5G ethernet
-`vfat` - driver to access `boot` partition during boot
+- `atlantic` - driver for 10G ethernet
+- `igc` - driver for 2.5G ethernet
+- `vfat` - driver to access `boot` partition during boot
 
-```conf
+```bash
 # /etc/mkinitcpio.conf
 
 ...
@@ -1019,7 +1019,7 @@ bootctl install
 
 then create an entry for boot with UART support, remember to update the `root` UUID (use `blkid` or `lsblk -f`)
 
-```conf
+```bash
 # /boot/loader/entries/arch.conf
 
 title Arch
@@ -2416,15 +2416,15 @@ smbstatus -p
 Samba version 4.23.3
 PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              
 ----------------------------------------------------------------------------------------------------------------------------------------
-2677    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51942)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2674    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:38898)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2669    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:48760)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2679    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51962)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2701    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:49328)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2697    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:42660)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2660    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:48720)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2678    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:51958)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2699    rtkocz       users        10.5.10.10 (ipv4:10.5.10.10:42054)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2677    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51942)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2674    my_user      users        10.0.12.30 (ipv4:10.0.12.30:38898)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2669    my_user      users        10.0.12.30 (ipv4:10.0.12.30:48760)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2679    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51962)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2701    my_user      users        10.0.12.30 (ipv4:10.0.12.30:49328)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2697    my_user      users        10.0.12.30 (ipv4:10.0.12.30:42660)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2660    my_user      users        10.0.12.30 (ipv4:10.0.12.30:48720)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2678    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51958)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2699    my_user      users        10.0.12.30 (ipv4:10.0.12.30:42054)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
 ```
 
 ```bash
@@ -2432,15 +2432,15 @@ smbstatus -S
 
 Service      pid     Machine       Connected at                     Encryption   Signing     
 ---------------------------------------------------------------------------------------------
-private      2660    10.5.10.10    Wed Nov 26 17:17:38 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2678    10.5.10.10    Wed Nov 26 17:17:56 2025 CET     AES-128-GCM  AES-128-GMAC
-private      2701    10.5.10.10    Wed Nov 26 17:21:25 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2677    10.5.10.10    Wed Nov 26 17:17:54 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2679    10.5.10.10    Wed Nov 26 17:17:57 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2674    10.5.10.10    Wed Nov 26 17:17:46 2025 CET     AES-128-GCM  AES-128-GMAC
-private      2699    10.5.10.10    Wed Nov 26 17:21:05 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2669    10.5.10.10    Wed Nov 26 17:17:40 2025 CET     AES-128-GCM  AES-128-GMAC
-private      2697    10.5.10.10    Wed Nov 26 17:21:00 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2660    10.0.12.30    Wed Nov 26 17:17:38 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2678    10.0.12.30    Wed Nov 26 17:17:56 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2701    10.0.12.30    Wed Nov 26 17:21:25 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2677    10.0.12.30    Wed Nov 26 17:17:54 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2679    10.0.12.30    Wed Nov 26 17:17:57 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2674    10.0.12.30    Wed Nov 26 17:17:46 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2699    10.0.12.30    Wed Nov 26 17:21:05 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2669    10.0.12.30    Wed Nov 26 17:17:40 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2697    10.0.12.30    Wed Nov 26 17:21:00 2025 CET     AES-128-GCM  AES-128-GMAC
 ```
 
 Validate Samba config
@@ -2707,21 +2707,21 @@ Configuration saved to /etc/target/saveconfig.json
 #### Login
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --login
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --login
 ```
 
 If you forget to set up credentials
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --op update -n node.session.auth.authmethod -v CHAP
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.authmethod -v CHAP
 ```
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --op update -n node.session.auth.username -v my_user
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.username -v my_user
 ```
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --op update -n node.session.auth.password -v my_pass
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.password -v my_pass
 ```
 
 Now you can access volume, remember to format or/and create partition.
