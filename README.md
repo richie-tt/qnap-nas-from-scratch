@@ -962,6 +962,21 @@ ClientIdentifier=mac
 UseNTP=true
 ```
 
+```bash
+# /etc/systemd/network/10G.link
+
+[Match]
+Type=ether
+MACAddress=24:5e:be:5c:64:4f
+
+[Link]
+Name=nas0
+MACAddressPolicy=persistent
+AutoNegotiationFlowControl=yes
+RxFlowControl=yes
+TxFlowControl=yes
+```
+
 #### Initramfs image
 
 Package `mkinitcpio-systemd-extras` will delivery all necessary hooks [sd-clevis](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Clevis), [sd-network](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Networking), [sd-resolve](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Name-Resolution) require auto-unlock root partition via network, please read documentation careful.
@@ -2162,7 +2177,7 @@ systemctl daemon-reload
 systemctl enable hdparm-raid5.service
 ```
 
-Check if disk are sleep
+Check if disk are sleep after 10 minutes
 
 ```bash
 check_disk_pm(){
@@ -2170,6 +2185,17 @@ check_disk_pm(){
      printf "%s: " "$d"; sudo hdparm -C "$d" 2>/dev/null | awk '/state/ {print $4}'
   done
 }
+```
+
+```bash
+ check_disk_pm                                                                                                                                                           ✔  ⚡  55  17:51:12 
+/dev/sda: standby
+/dev/sdb: standby
+/dev/sdc: standby
+/dev/sdd: standby
+/dev/sde: standby
+/dev/sdf: standby
+/dev/sdg: standby
 ```
 
 ## Share files
@@ -2438,27 +2464,15 @@ Add configuration
 ```diff
 # cat /etc/minidlna.conf
 
-port=8200
++port=8200
 
 +media_dir=V,/srv/media/video
 +media_dir=A,/srv/media/music
 +media_dir=P,/srv/media/photos
 
 +friendly_name=MyNAS
-
 +db_dir=/var/cache/minidlna
-
-# this should be a list of file names to check for when searching for album art
-# note: names should be delimited with a forward slash ("/")
-album_art_names=Cover.jpg/cover.jpg/AlbumArtSmall.jpg/albumartsmall.jpg/AlbumArt.jpg/albumart.jpg/Album.jpg/album.jpg/Folder.jpg/folder.jpg/Thumb.jpg/thumb.jpg
-
 +notify_interval=60
-
-# serial and model number the daemon will report to clients
-# in its XML description
-serial=12345678
-model_number=1
-
 +minissdpdsocket=/var/run/minissdpd.sock
 ```
 
@@ -2467,7 +2481,7 @@ systemctl enable minidlna
 systemctl start minidlna
 ```
 
-Unfortunately, minidlna does not generate thumbs on its own, so I use script to generate it.
+Unfortunately, minidlna does not generate thumbs on its own, so a script is needed to generate it.
 This script will skip existing thumbs and will not replace them.
 
 ```sh
@@ -2509,18 +2523,18 @@ Copy this script to `/usr/local/bin/` and add execution rights
 chmod +x generate_thumbs.sh
 ```
 
-`-f` - this switch will replace the current thumbs with new ones
+- `-f` - this switch will replace the current thumbs with new ones
 
-When script finish, execute following command to generate new cache.
+When script finish, run following command to generate new cache.
 
 ```bash
 minidlnad -R
 systemctl restart minidlna
 ```
 
-```bash
+```diff
 Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:1134: warn: Starting MiniDLNA version 1.3.3.
-Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:394: warn: Creating new database at /var/cache/private/minidlna/files.db
++Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:394: warn: Creating new database at /var/cache/private/minidlna/files.db
 Nov 29 00:12:00 qnap minidlnad[72407]: minidlna.c:1182: warn: HTTP listening on port 8200
 Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:135: warn: Parsing playlists...
 Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:269: warn: Finished parsing playlists.
@@ -2530,14 +2544,12 @@ Nov 29 00:12:12 qnap minidlnad[72416]: playlist.c:269: warn: Finished parsing pl
 
 [Gerbera](https://gerbera.io/) is an open source UPnP media server with a web interface. Follow this [guide](https://wiki.archlinux.org/title/Gerbera) to install it.
 
-
 ```bash
 mkdir -p /var/cache/gerbera
-```
-
-```bash
 chown gerbera:gerbera /var/cache/gerbera
 ```
+
+TODO: finish description
 
 ## SSD TRIM
 
@@ -2568,46 +2580,78 @@ Here is a concise breakdown of common Input/Output (I/O) methods used in storage
 
 ### Filesystem
 
+Format partition as follow
+
 ```bash
-pacman -S xfsprogs
+mkfs.btrfs -L iscsi /dev/vg_iscsi/lv_iscsi -f
+```
+
+Create folder for mounting
+
+```bash
+mkdir -p /srv/iscsi
+```
+
+Mount partition to make FS configuration
+
+```bash
+mount /dev/vg_iscsi/lv_iscsi /srv/iscsi/
+btrfs subvolume create /srv/iscsi/@iscsi
+
+btrfs subvolume list /srv/iscsi 
+
+btrfs subvolume set-default 256 /srv/iscsi/
+```
+
+> [!TIP]
+> Remember to umount partition
+
+Edit `/etc/fstab/`
+
+```bash
+UUID=f5616810-810a-4a2c-9fdb-856b946236e4  /srv/iscsi    btrfs  subvol=@iscsi,noatime,compress=zstd,space_cache=v2,autodefrag   0  0  
+```
+
+> [!TIP]
+> Use `fstabfmt -i /etc/fstab` to autoformat
+
+```bash
+mount -a
 ```
 
 ```bash
-mkfs.xfs /dev/vg_iscsi/lv_iscsi
-```
-
-```diff
-# /etc/fstab
-
-+UUID=479667cf-7bdd-4362-8db4-32e516ba4f69  /srv/iscsi  xfs  defaults,noatime  0 0
-```
-
-Use `fstabfmt` for auto formatting `fstab` file
-
-```bash
-fstabfmt -i /etc/fstab
+btrfs quota enable /srv/iscsi
 ```
 
 ### Configuration
 
+Install required package
+
 ```bash
-pacman -S targetcli-fb
+pacman -S targetcli-fb python-rtslib-fb
 ```
 
-Missing `target.service`
+Currently, there is a bug in [python-rtslib-fb](https://aur.archlinux.org/packages/python-rtslib-fb) AUR, missing `target` service.
 
-Set up basic configuration.
+```diff
+package() {
+...
++ install -Dm644 "systemd/target.service" "$pkgdir/usr/lib/systemd/system/target.service"
+}
+```
+
+Set up basic configuration. A good [guide](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/managing_storage_devices/configuring-an-iscsi-target_managing-storage-devices#creating-an-iscsi-lun_configuring-an-iscsi-target).
 
 ```bash
 $ targetcli
 
 /> iscsi/
-/iscsi> create iqn.2025-11.local.qnap:iscsi
-/iscsi> iqn.2025-11.local.qnap:iscsi/tpg1/
+/iscsi> create iqn.2025-11.local.qnap-iscsi:1212121212
+/iscsi> iqn.2025-11.local.qnap-iscsi:1212121212/tpg1/
 
 /iscsi/iqn.20...ap:iscsi/tpg1> set attribute authentication=1
 /iscsi/iqn.20...ap:iscsi/tpg1> set auth userid=my_user
-/iscsi/iqn.20...ap:iscsi/tpg1> set auth password=my_pass
+/iscsi/iqn.20...ap:iscsi/tpg1> set auth password=my_pass 
 
 /iscsi/iqn.20...ap:iscsi/tpg1> /
 /> saveconfig
@@ -2616,11 +2660,13 @@ Configuration saved to /etc/target/saveconfig.json
 
 #### ACL
 
-Dynamic
+Switching ACL to dynamic mode.
 
 ```bash
 /iscsi/iqn.20...ap:iscsi/tpg1> set attribute generate_node_acls=1
 /iscsi/iqn.20...ap:iscsi/tpg1> set attribute cache_dynamic_acls=1
+/iscsi/iqn.20...ap:iscsi/tpg1> set attribute demo_mode_write_protect=0
+/iscsi/iqn.20...ap:iscsi/tpg1> set attribute prod_mode_write_protect=0
 ```
 
 #### Volume
@@ -2645,7 +2691,7 @@ o- fileio ......................................................................
       o- default_tg_pt_gp ........................................................ [ALUA state: Active/optimized]
 
 
-/> /iscsi/iqn.2025-11.local.qnap:iscsi/tpg1/luns
+/> /iscsi/iqn.2025-11.local.qnap-iscsi:1212121212/tpg1/luns
 /iscsi/iqn.20...csi/tpg1/luns> create /backstores/fileio/paperless
 
 /iscsi/iqn.20...csi/tpg1/luns> ls
@@ -2661,28 +2707,26 @@ Configuration saved to /etc/target/saveconfig.json
 #### Login
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --login
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --login
 ```
 
 If you forget to set up credentials
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --op update -n node.session.auth.authmethod -v CHAP
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --op update -n node.session.auth.authmethod -v CHAP
 ```
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --op update -n node.session.auth.username -v my_user
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --op update -n node.session.auth.username -v my_user
 ```
 
 ```bash
-iscsiadm -m node -T iqn.2025-11.local.qnap:iscsi -p 10.5.10.90:3260 --op update -n node.session.auth.password -v my_pass
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.5.10.90:3260 --op update -n node.session.auth.password -v my_pass
 ```
 
-Now you can access volume, remember to format it.
-
+Now you can access volume, remember to format or/and create partition.
 
 ## UPS
 
 ## ACPI custom DSDT
-
 

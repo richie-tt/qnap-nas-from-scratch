@@ -11,4 +11,3 @@ MulticastDNS=yes
 [DHCPv4]
 ClientIdentifier=mac
 UseNTP=true
-
