@@ -97,6 +97,8 @@
       - [Login](#login)
   - [UPS](#ups)
   - [ACPI custom DSDT](#acpi-custom-dsdt)
+  - [ZSH](#zsh)
+    - [Plugins](#plugins)
 
 ## Board
 
@@ -891,10 +893,6 @@ pacman -S acpi \
   sysstat \
   systemd-resolvconf \
   tpm2-tools \
-  zsh \
-  zsh-autosuggestions \
-  zsh-history-substring-search \
-  zsh-syntax-highlighting \
   xfsprogs
 ```
 
@@ -932,8 +930,6 @@ yay -S fzf-marks \
   # mkinitcpio-systemd-root-password \
   setserial \
   fstabfmt \
-  ttf-meslo-nerd-font-powerlevel10k \
-  zsh-theme-powerlevel10k-git
 ```
 
 TODO: validate mkinitcpio-systemd-root-password
@@ -2745,3 +2741,91 @@ Now you can access volume, remember to format or/and create partition.
 
 ## ACPI custom DSDT
 
+## ZSH
+
+```bash
+yay -S ruby-colorls \
+  ttf-meslo-nerd-font-powerlevel10k \
+  zsh \
+  zsh-autosuggestions \
+  zsh-history-substring-search \
+  zsh-syntax-highlighting \
+  zsh-theme-powerlevel10k-git
+```
+
+If `ls` return following error
+
+```bash
+❯ ls -la
+/usr/lib/ruby/3.4.0/rubygems/specification.rb:1421:in 'block in Gem::Specification#activate_dependencies': Could not find 'unicode-display_width' (>= 1.7, < 3.0) among 67 total gem(s) (Gem::MissingSpecError)
+Checked in 'GEM_PATH=/home/my_user/.local/share/gem/ruby/3.4.0:/usr/lib/ruby/gems/3.4.0' at: /usr/lib/ruby/gems/3.4.0/specifications/colorls-1.5.0.gemspec, execute `gem env` for more information
+...
+```
+
+Fix it by following command
+
+```bash
+gem install colorls
+```
+
+<img src="assets/zsh_ls.png" alt="drawing" width="800"/>
+
+### Plugins
+
+- [zsh-fzf-history-search](https://github.com/joshskidmore/zsh-fzf-history-search)
+
+  Install following package
+
+  ```bash
+  yay -S zsh-fzf-plugin-git
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-fzf-plugin/fzf.plugin.zsh
+  ```
+
+- [zsh-autosuggestions.zsh](https://github.com/zsh-users/zsh-autosuggestions)
+
+  Install following package
+
+  ```bash
+  yay -S zsh-autosuggestions
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+  ```
+
+- [fzf-marks](https://github.com/urbainvaes/fzf-marks)
+
+  Install following package
+
+  ```bash
+  yay -S fzf-marks-git
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/fzf-marks/fzf-marks.zsh
+  ```
+
+- [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting)
+
+  Install following package
+
+  ```bash
+  yay -S zsh-syntax-highlighting
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/fzf-marks/fzf-marks.zsh
+  ```
+
+  source /usr/share/zsh/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
