@@ -99,6 +99,8 @@
   - [ACPI custom DSDT](#acpi-custom-dsdt)
   - [ZSH](#zsh)
     - [Plugins](#plugins)
+  - [Maintenance](#maintenance)
+    - [BTRFS](#btrfs)
 
 ## Board
 
@@ -2825,7 +2827,47 @@ gem install colorls
   Edit `.zshrc`
 
   ```diff
-  +source /usr/share/fzf-marks/fzf-marks.zsh
+  +source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
   ```
 
-  source /usr/share/zsh/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
+- [zsh-theme-powerlevel10k-git](https://github.com/romkatv/powerlevel10k)
+
+  ```bash
+  yay -S https://github.com/romkatv/powerlevel10k
+  ```
+
+  ```diff
+  +source /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme
+  ```
+
+  ```bash
+  p10k configure
+  ```
+
+- [zsh-history-substring-search](https://github.com/zsh-users/zsh-history-substring-search)
+
+  ```bash
+  pacman -S zsh-history-substring-search
+  ```
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
+  ```
+
+## Maintenance
+
+### BTRFS
+
+```bash
+pacman -S btrfs-heatmap
+```
+
+Check chunk allocation
+
+```bash
+btrfs-heatmap /srv/media/ -o befor_defrag.png --size 12
+```
+
+This will generate the picture of chunk allocation
+
+<img src="assets/befor_re-allocation.png" alt="drawing" width="800"/>
