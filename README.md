@@ -2858,6 +2858,8 @@ gem install colorls
 
 ### BTRFS
 
+Install `btrfs-heatmap` application
+
 ```bash
 pacman -S btrfs-heatmap
 ```
@@ -2879,6 +2881,9 @@ $ btrfs balance start -d /srv/media
 
 Done, had to relocate 345 out of 347 chunks
 ```
+
+With such a large storage space of around `6TB`, it's not the best way to show the differences, but you can still see some differences.
+ 
 
 <img src="assets/after_re-allocation.png" alt="drawing" width="800"/>
 
