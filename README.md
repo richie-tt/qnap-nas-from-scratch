@@ -2871,3 +2871,14 @@ btrfs-heatmap /srv/media/ -o befor_defrag.png --size 12
 This will generate the picture of chunk allocation
 
 <img src="assets/befor_re-allocation.png" alt="drawing" width="800"/>
+
+Now lets relocate chunks
+
+```bash
+$ btrfs balance start -d /srv/media
+
+Done, had to relocate 345 out of 347 chunks
+```
+
+<img src="assets/after_re-allocation.png" alt="drawing" width="800"/>
+
