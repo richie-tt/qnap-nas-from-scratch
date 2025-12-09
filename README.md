@@ -1,41 +1,45 @@
-# Qnap TS-h973AX - NAS server from scratch (in progress)
+![work in progress](https://cdn-icons-png.flaticon.com/512/5578/5578703.png)
 
-- [Qnap TS-h973AX - NAS server from scratch (in progress)](#qnap-ts-h973ax---nas-server-from-scratch-in-progress)
-  - [Board](#board)
-    - [Specification](#specification)
-    - [UART](#uart)
-      - [Investigation](#investigation)
-      - [Useful debug command](#useful-debug-command)
-    - [BIOS](#bios)
-      - [Boot order](#boot-order)
-  - [Arch installation](#arch-installation)
-    - [Kernel parameters](#kernel-parameters)
-    - [OS disk preparation](#os-disk-preparation)
-      - [Checklist before partitioning](#checklist-before-partitioning)
-      - [Partitions](#partitions)
-        - [Encryption (root)](#encryption-root)
-          - [Recovery password](#recovery-password)
-          - [Binary key file](#binary-key-file)
-          - [TPM \& TANG](#tpm--tang)
-          - [Decrypt luks partition](#decrypt-luks-partition)
-          - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
-        - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
-        - [BTRFS file system](#btrfs-file-system)
-      - [EFI preparing (/boot)](#efi-preparing-boot)
-      - [Mount layout](#mount-layout)
-    - [Basic settings, packages, users](#basic-settings-packages-users)
-      - [System initialization](#system-initialization)
-      - [Locale](#locale)
-      - [Users and permission](#users-and-permission)
-      - [Pacman configure](#pacman-configure)
+# Qnap TS-h973AX - NAS server from scratch
+
+- [Qnap TS-h973AX - NAS server from scratch](#qnap-ts-h973ax---nas-server-from-scratch)
+- [Board](#board)
+  - [Specification](#specification)
+  - [UART](#uart)
+    - [Investigation](#investigation)
+    - [Useful debug command](#useful-debug-command)
+  - [BIOS](#bios)
+    - [Boot order](#boot-order)
+- [Linux](#linux)
+  - [Kernel parameters](#kernel-parameters)
+  - [Checklist before partitioning](#checklist-before-partitioning)
+  - [Partition encryption](#partition-encryption)
+    - [Recovery password](#recovery-password)
+    - [Binary key file](#binary-key-file)
+    - [TPM \& TANG](#tpm--tang)
+    - [Decrypt luks partition](#decrypt-luks-partition)
+    - [Use dedicate AMD Encryption controller](#use-dedicate-amd-encryption-controller)
+  - [UART fix](#uart-fix)
+- [Arch installation](#arch-installation)
+  - [OS disk preparation](#os-disk-preparation)
+  - [Encryption (/)](#encryption-)
+  - [Logical Volume Manager (LVM)](#logical-volume-manager-lvm)
+  - [BTRFS file system](#btrfs-file-system)
+  - [EFI preparing (/boot)](#efi-preparing-boot)
+  - [Mount layout](#mount-layout)
+  - [Basic settings, packages, users](#basic-settings-packages-users)
+    - [System initialization](#system-initialization)
+    - [Locale](#locale)
+    - [Users and permission](#users-and-permission)
+    - [Pacman configure](#pacman-configure)
       - [Install basic packages](#install-basic-packages)
-      - [Service to enable](#service-to-enable)
-      - [Install YAY](#install-yay)
-      - [AUR packages](#aur-packages)
-      - [Configure network](#configure-network)
-        - [Useful command](#useful-command)
-      - [Initramfs image](#initramfs-image)
-      - [UEFI boot manager](#uefi-boot-manager)
+    - [Service to enable](#service-to-enable)
+    - [Install YAY](#install-yay)
+    - [AUR packages](#aur-packages)
+    - [Configure network](#configure-network)
+      - [Useful command](#useful-command)
+    - [Initramfs image](#initramfs-image)
+    - [UEFI boot manager](#uefi-boot-manager)
   - [After first boot](#after-first-boot)
     - [Other basic settings](#other-basic-settings)
       - [Resolver](#resolver)
@@ -47,66 +51,66 @@
       - [Network](#network)
       - [RAM/IO (cache, inotify)](#ramio-cache-inotify)
       - [RAID](#raid)
-    - [UART fix](#uart-fix)
       - [Agetty with UART](#agetty-with-uart)
-  - [NAS Server](#nas-server)
-    - [Disk Topology](#disk-topology)
-      - [Partitions](#partitions-1)
-        - [RAID6 - prepare disk](#raid6---prepare-disk)
-        - [RAID1 - prepare disk](#raid1---prepare-disk)
-        - [NVMe cache - prepare disk](#nvme-cache---prepare-disk)
-    - [RAID via mdadm](#raid-via-mdadm)
-      - [RAID6](#raid6)
-      - [RAID1](#raid1)
-      - [RAID configuration](#raid-configuration)
-        - [Change the name](#change-the-name)
-      - [RAID optimization](#raid-optimization)
-      - [RAID Mail notification](#raid-mail-notification)
-        - [Postfix](#postfix)
-    - [dm-crypt](#dm-crypt)
+- [NAS Server](#nas-server)
+  - [Disk Topology](#disk-topology)
+  - [NVMe cache](#nvme-cache)
+  - [Shared files (Media and Private)](#shared-files-media-and-private)
+    - [Partition](#partition)
+    - [RAID6](#raid6)
+    - [Encryption](#encryption)
     - [LVM](#lvm)
-      - [Files (Media \& Private)](#files-media--private)
-        - [Cache (Media \& Private)](#cache-media--private)
-      - [ISCSI](#iscsi)
-        - [Cache ISCSI](#cache-iscsi)
-      - [Troubleshooting](#troubleshooting)
-        - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
-        - [Useful command](#useful-command-1)
-    - [BTRFS - File system](#btrfs---file-system)
+    - [BTRFS](#btrfs)
       - [Media](#media)
       - [Private](#private)
-      - [Snapshots - snapper](#snapshots---snapper)
-        - [Useful command](#useful-command-2)
-    - [Disk power managed - hdparm](#disk-power-managed---hdparm)
-  - [Share files](#share-files)
     - [Samba](#samba)
-      - [Advertising SAMBA - mDNS](#advertising-samba---mdns)
+      - [Advertising SAMBA (mDNS)](#advertising-samba-mdns)
       - [Windows compatibility](#windows-compatibility)
       - [Create Samba user](#create-samba-user)
-      - [NSSWITCH](#nsswitch)
-      - [Useful command](#useful-command-3)
+      - [Name Service Switch](#name-service-switch)
     - [DLNA](#dlna)
       - [ReadyMedia (MiniDLNA)](#readymedia-minidlna)
       - [Gerbera Media Server](#gerbera-media-server)
-  - [SSD TRIM](#ssd-trim)
-  - [ISCSI](#iscsi-1)
-    - [Filesystem](#filesystem)
-    - [Configuration](#configuration)
+  - [ISCSI](#iscsi)
+    - [Partition](#partition-1)
+    - [Encryption](#encryption-1)
+    - [LVM](#lvm-1)
+    - [RAID1](#raid1)
+    - [BTRFS](#btrfs-1)
+    - [Service](#service)
       - [ACL](#acl)
       - [Volume](#volume)
       - [Login](#login)
+- [Maintenance](#maintenance)
+  - [Postfix](#postfix)
+  - [LVM](#lvm-2)
+    - [Troubleshooting](#troubleshooting)
+      - [vgcreate - `inconsistent logical block sizes`](#vgcreate---inconsistent-logical-block-sizes)
+    - [Useful command](#useful-command-1)
+  - [RAID](#raid-1)
+    - [Mail notification](#mail-notification)
+    - [Change the `md127` name](#change-the-md127-name)
+  - [BTRFS](#btrfs-2)
+    - [Chunks](#chunks)
+    - [Scrub](#scrub)
+  - [Samba](#samba-1)
+    - [Useful command](#useful-command-2)
+  - [S.M.A.R.T.](#smart)
+  - [Disk power managed - hdparm](#disk-power-managed---hdparm)
+  - [Snapshots - snapper](#snapshots---snapper)
+    - [Useful command](#useful-command-3)
   - [UPS](#ups)
   - [ACPI custom DSDT](#acpi-custom-dsdt)
+  - [SSD TRIM](#ssd-trim)
+- [Extra](#extra)
   - [ZSH](#zsh)
     - [Plugins](#plugins)
-  - [Maintenance](#maintenance)
-    - [BTRFS](#btrfs)
-      - [Chunks](#chunks)
-      - [Scrub](#scrub)
+  - [mDNS scanner](#mdns-scanner)
+  - [fstab](#fstab)
 
-## Board
+# Board
 
-### Specification
+## Specification
 
 The QNAP [TS-h973AX](https://www.qnap.com/en/product/ts-h973ax) is a 9-bay NAS server in a compact tower design.
 
@@ -127,7 +131,7 @@ Specification:
   - 2x USB-A 3.2 Gen 2 back
   - 1x USB-A 3.2 Gen 2 front
 
-### UART
+## UART
 
 The TS-h973AX does not have a graphics card, but is capable of displaying information like POST, boot log information via UART interface.
 
@@ -159,7 +163,7 @@ You can use any UART terminal, for example, `picocom`
 picocom -b 115200 -f n /dev/ttyUSB0
 ```
 
-#### Investigation
+### Investigation
 
 I've spent many hours trying to understand why `UART` works unstable and quickly hangs for never distribution like [Debian](https://www.debian.org), [Arch Linux](https://archlinux.org), [TrueNAS](https://www.truenas.com), but works stable during [POST messages](https://en.wikipedia.org/wiki/Power-on_self-test), [BIOS interaction](https://www.techtarget.com/whatis/definition/BIOS-basic-input-output-system) and **all the time** for [QuTS hero](https://www.qnap.com/en/operating-system/quts-hero).
 
@@ -199,7 +203,7 @@ I've spent many hours trying to understand why `UART` works unstable and quickly
 > [!NOTE]
 > In section [UART fix](#uart-fix) is explained how to make polling mode permanent for each boot (`IRQ 4` -> `IRQ 0`)
 
-#### Useful debug command
+### Useful debug command
 
 - `cat /proc/tty/driver/serial` - UART status with flags/registry
 - `fuser -v /dev/ttyS0` - shows which process is hanging/using the port, kill all processes with `-k`
@@ -213,7 +217,7 @@ I've spent many hours trying to understand why `UART` works unstable and quickly
 > [!NOTE]
 > `setserial` can be installed from [AUR](https://aur.archlinux.org/packages/setserial)
 
-### BIOS
+## BIOS
 
 It was mentioned that the UART works stably during POST messages and BIOS interaction, pressing `DEL` during POST allows you to enter BIOS
 
@@ -263,7 +267,7 @@ Useful BIOS settings:
                   Version 2.20.1274. Copyright (C) 2021 American Megatrends, Inc.     
 ```
 
-#### Boot order
+### Boot order
 
 > [!IMPORTANT]
 > This BIOS v2.20.1274 allowing to boot only from [USB device](https://en.wikipedia.org/wiki/USB) or [NVMe disk](https://en.wikipedia.org/wiki/NVM_Express).  
@@ -321,36 +325,9 @@ There are two possibilities to make the boot work:
 > <img src="assets/adapter1.png" alt="drawing" width="622"/>  
 > <img src="assets/adapter2.png" alt="drawing" width="700"/>  
 
-## Arch installation
+# Linux
 
-[Arch Linux Live distributions](https://wiki.archlinux.org/title/USB_flash_installation_medium) always boot with an SSH server already running. Simply setting a root password will allow you to successfully log in to the Arch Live distribution via SSH. The tricky part is that you need to set a `root` password without being able to see what you are doing, so wait a few minutes for the boot process to finish and then enter the command below (with a keyboard connected to the QNAP, of course).
-
-```bash
-passwd root
-```
-
-Repeat the password twice.
-
-> [!TIP]
-> I recommend understanding the entire flow because you have to execute these commands from memory
->
-> ```bash
-> passwd root
-> New password: 
-> Retype new password:
-> passwd: password updated successfully
-> ```
-
-after that, you can use SSH to log in to Arch Live distribution (this IP `192.168.1.123` is just an example; you need to figure out the IP of Arch Live distribution)
-
-```bash
-ssh root@192.168.1.123
-```
-
-> [!NOTE]
-> This installation process is just an extension of the excellent [Arch Installation Guide](<https://wiki.archlinux.org/title/Installation_guide>), which I recommend.
-
-### Kernel parameters
+## Kernel parameters
 
 The following kernel parameters stabilize the UART **ONLY** when receiving logs (one-way communication), which allows you to observe the entire boot process.**The order of the parameters is important.**
 
@@ -393,33 +370,9 @@ For debug purpose, useful for other Linux distribution
 
 - `8250.skip_txen_test=1` - it skips the “TX enable” sanity test used for some quirky UARTs during init.
 
-### OS disk preparation
+## Checklist before partitioning
 
-Partitioning depends on the approach you choose, with or without a USB DOM (check [Boot Order](#boot-order) for more information). This guide uses a single NVMe drive for the entire system (without a USB DOM) with encryption, LVM and BTRFS as file system.
-
-```bash
-+-----------------+-------------------+
-|                 |                   |
-|  EFI Partition  |  Root partition   |
-|     (VFAT)      |     (BTRFS)       |
-|                 |                   |
-|                 +-------------------+
-|                 |                   |
-|                 |       LVM         |
-|                 |                   |
-|                 +-------------------+
-|                 |                   |
-|                 |    cryptsetup     |
-|                 |                   |
-+-----------------+-------------------+
-|               NVMe SSD              |
-|                1 disk               |
-+-------------------------------------+
-```
-
-#### Checklist before partitioning
-
-Typically, NVMe drives use a smaller block size of `512B`, which is slower than `4096B`.
+Typically, NVMe drives use a smaller block size of `512B`, which is slower than `4096B`, and also the different block sizes between the partition and the cache partition may lead to unstable operation or a drop in cache performance.
 
 > [!WARNING]
 >
@@ -449,31 +402,7 @@ LBA Format  0 : Metadata Size: 0   bytes - Data Size: 512 bytes - Relative Perfo
 LBA Format  1 : Metadata Size: 0   bytes - Data Size: 4096 bytes - Relative Performance: 0x1 Better (in use)
 ```
 
-#### Partitions
-
-Required disk configuration:
-
-- Disk partition table need to use `GPT`
-- EFI parition needs to use correct type `EFI System`
-- OS parition should be `Linux filesystem`
-
-```bash
-$ fdisk /dev/nvme0n1 -l
-
-Disk /dev/nvme0n1: 465.76 GiB, 500107862016 bytes, 976773168 sectors
-Disk model: KINGSTON SNV3S500G                      
-Units: sectors of 1 * 512 = 512 bytes
-Sector size (logical/physical): 512 bytes / 512 bytes
-I/O size (minimum/optimal): 512 bytes / 512 bytes
-Disklabel type: gpt
-Disk identifier: 5A741586-4E80-4CEF-A117-C69E2850E569
-
-Device           Start       End   Sectors   Size Type
-/dev/nvme0n1p1    2048   2099199   2097152     1G EFI System
-/dev/nvme0n1p2 2099200 976773119 974673920 464.8G Linux filesystem
-```
-
-##### Encryption (root)
+## Partition encryption
 
 I realize that entering a password every time the NAS server boots can be inconvenient, even though the TS-h973AX board doesn't have a video card can be more difficult, but an unencrypted root partition where RAID passwords are stored also poses a serious security risk.
 
@@ -516,7 +445,7 @@ argon2id      4 iterations, 927845 memory, 4 parallel threads (CPUs) for 256-bit
     twofish-xts        512b       144.4 MiB/s       147.6 MiB/s
 ```
 
-###### Recovery password
+### Recovery password
 
 During encryption, `cryptsetup` asks for a static password. Create a strong password, as this will be the recovery password. This password will be stored in slot `0`.
 
@@ -524,7 +453,7 @@ During encryption, `cryptsetup` asks for a static password. Create a strong pass
 cryptsetup luksFormat /dev/nvme0n1p2 -c aes-xts-plain64 -s 256 -h sha512
 ```
 
-###### Binary key file
+### Binary key file
 
 A binary key file is one option for unlocking a partition. I recommend using it as a backup on a USB drive. It can be helpful when you need to decrypt the main partition when the TPM + TANG method doesn't work.
 
@@ -557,7 +486,7 @@ Instead of adding another kernel parameter, there is possibility to add this set
 luks_root    UUID=XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX   /root.key:UUID=ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ   luks,keyfile-timeout=10s
 ```
 
-###### TPM & TANG
+### TPM & TANG
 
 Validate if TPM is working, in case of issue check this [guide](https://wiki.archlinux.org/title/Trusted_Platform_Module)
 
@@ -609,7 +538,7 @@ Tokens:
 ...
 ```
 
-###### Decrypt luks partition
+### Decrypt luks partition
 
 It's required to progress with the next steps, like LVM, BTRFS, etc.
 
@@ -617,7 +546,7 @@ It's required to progress with the next steps, like LVM, BTRFS, etc.
 cryptsetup open /dev/nvme0n1p2 luks_root
  ```
 
-###### Use dedicate AMD Encryption controller
+### Use dedicate AMD Encryption controller
 
 AMD Encryption controller is detect  but Kernel report some issue.
 
@@ -633,7 +562,134 @@ ccp 0000:10:00.2: psp: unable to access the device: you might be running a broke
 > [!CAUTION]
 > Require investigation
 
-##### Logical Volume Manager (LVM)
+## UART fix
+
+In the [Board/UART](#uart) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data. Switches to polling mode (timer-controlled) the UART operation is slower but stable.
+
+On fresh installation, `UART` uses `IRQ 4`
+
+```bash
+$ cat /proc/tty/driver/serial
+
+serinfo:1.0 driver revision:
+0: uart:16550A port:000003F8 irq:4 tx:121 rx:0 RTS|DTR
+1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
+```
+
+Switch `IRQ 4` to `IRQ 0` (polling mode)
+
+> [!TIP]
+> `setserial` needs to be installed from [AUR](https://aur.archlinux.org/packages/setserial)
+
+```bash
+setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0
+```
+
+Validate chang
+
+```bash
+$ cat /proc/tty/driver/serial
+
+serinfo:1.0 driver revision:
+0: uart:16550A port:000003F8 irq:0 tx:450 rx:0 RTS|DTR
+1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
+```
+
+Turn off the power suspend for UART
+
+```bash
+echo on | sudo tee /sys/class/tty/ttyS0/device/power/control
+```
+
+To apply these changes automatically on every boot, create following `udev` rule:
+
+```bash
+# /etc/udev/rules.d/99-ttyS0-nopm.rules
+
+KERNEL=="ttyS0", RUN+="/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0"
+ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyS0", ATTR{device/power/control}="on"
+```
+
+# Arch installation
+
+[Arch Linux Live distributions](https://wiki.archlinux.org/title/USB_flash_installation_medium) always boot with an SSH server already running. Simply setting a root password will allow you to successfully log in to the Arch Live distribution via SSH. The tricky part is that you need to set a `root` password without being able to see what you are doing, so wait a few minutes for the boot process to finish and then enter the command below (with a keyboard connected to the QNAP, of course).
+
+```bash
+passwd root
+```
+
+Repeat the password twice.
+
+> [!TIP]
+> I recommend understanding the entire flow because you have to execute these commands from memory
+>
+> ```bash
+> passwd root
+> New password: 
+> Retype new password:
+> passwd: password updated successfully
+> ```
+
+after that, you can use SSH to log in to Arch Live distribution (this IP `192.168.1.123` is just an example; you need to figure out the IP of Arch Live distribution)
+
+```bash
+ssh root@192.168.1.123
+```
+
+> [!NOTE]
+> This installation process is just an extension of the excellent [Arch Installation Guide](<https://wiki.archlinux.org/title/Installation_guide>), which I recommend.
+
+## OS disk preparation
+
+Partitioning depends on the approach you choose, with or without a USB DOM (check [Boot Order](#boot-order) for more information). This guide uses a single NVMe drive for the entire system (without a USB DOM) with encryption, LVM and BTRFS as file system.
+
+```bash
++-----------------+-------------------+
+|                 |                   |
+|  EFI Partition  |  Root partition   |
+|     (VFAT)      |     (BTRFS)       |
+|                 |                   |
+|                 +-------------------+
+|                 |                   |
+|                 |       LVM         |
+|                 |                   |
+|                 +-------------------+
+|                 |                   |
+|                 |    cryptsetup     |
+|                 |                   |
++-----------------+-------------------+
+|               NVMe SSD              |
+|                1 disk               |
++-------------------------------------+
+```
+
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- EFI parition needs to use correct type `EFI System`
+- OS parition should be `Linux filesystem`
+
+```bash
+$ fdisk /dev/nvme0n1 -l
+
+Disk /dev/nvme0n1: 465.76 GiB, 500107862016 bytes, 976773168 sectors
+Disk model: KINGSTON SNV3S500G                      
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 512 bytes
+I/O size (minimum/optimal): 512 bytes / 512 bytes
+Disklabel type: gpt
+Disk identifier: 5A741586-4E80-4CEF-A117-C69E2850E569
+
+Device           Start       End   Sectors   Size Type
+/dev/nvme0n1p1    2048   2099199   2097152     1G EFI System
+/dev/nvme0n1p2 2099200 976773119 974673920 464.8G Linux filesystem
+```
+
+## Encryption (/)
+
+Follow this [guide](#partition-encryption) to encrypt partition.
+
+## Logical Volume Manager (LVM)
 
 > [!TIP]
 > Read this [guide](https://wiki.archlinux.org/title/Dm-crypt/Encrypting_an_entire_system) about LVM to understand all the following command and their consequences.
@@ -650,7 +706,7 @@ vgcreate vg_root /dev/mapper/luks_root
 lvcreate -L 250G vg_root -n lv_root
 ```
 
-##### BTRFS file system
+## BTRFS file system
 
 > [!TIP]
 > Read this [guide](https://wiki.archlinux.org/title/Btrfs) about BTRFS to understand all the following command and their consequences.
@@ -703,54 +759,55 @@ Check default subvolume
 btrfs subvolume get-default /mnt
 ```
 
-#### EFI preparing (/boot)
+> [!WARNING]
+> Remember to unmount `lv_root`, because subvolumes will be used.
 
-TODO: Add description
+## EFI preparing (/boot)
+
+Read this [guide](https://wiki.archlinux.org/title/EFI_system_partition) about EFI partition to understand required actions.
 
 ```bash
 mkfs.vfat -F 32 /dev/nvme0n1p1
 ```
 
-#### Mount layout
+## Mount layout
 
-Make following folders
+Following picture, represent mount layout
 
 ```bash
-mkdir /mnt/home 
-
-mkdir -p /mnt/var/cache
-
-mkdir /mnt/boot         
-
+/mnt
+├── / (subvol=@)
+│
+├── /home (subvol=@home)
+│
+├── /var
+│   └── /cache (subvol=@var_cache)
+│
+└── /boot (VFAT)
 ```
 
-> [!IMPORTANT]
-> Umount root partition, to use subvolumes
->
-> ```bash
-> umount /mnt
-> ```
-
-> [!TIP]
-> Read this [doc](https://btrfs.readthedocs.io/en/latest/ch-mount-options.html), to understand BTRFS mount options.
+Execute commands
 
 ```bash
 mount -o subvol=@,relatime,lazytime,autodefrag /dev/vg_root/lv_root /mnt
 
-mount -o subvol=@home,relatime,lazytime,autodefrag /dev/vg_root/lv_root /mnt/home
-
-mount -o subvol=@var_cache,compress=zstd:3,relatime,lazytime /dev/vg_root/lv_root /mnt/var/cache
+mkdir /mnt/home 
+mkdir -p /mnt/var/cache
+mkdir /mnt/boot  
 
 mount /dev/nvme0n1p1 /mnt/boot
+mount -o subvol=@home,relatime,lazytime,autodefrag /dev/vg_root/lv_root /mnt/home
+mount -o subvol=@var_cache,compress=zstd:3,relatime,lazytime /dev/vg_root/lv_root /mnt/var/cache
 ```
 
-### Basic settings, packages, users
+> [!TIP]
+> Read this [doc](https://btrfs.readthedocs.io/en/latest/ch-mount-options.html), to understand BTRFS mount options.
 
-#### System initialization
+## Basic settings, packages, users
 
-Requires all system partitions to be properly mounted on `/mnt`, check the visualization of the mount point layout
+### System initialization
 
-Check mount layout
+It requires that all system partitions are properly mounted in the `/mnt` directory, checking the visualization of the mount point layout and confirming that everything is in place.
 
 ```bash
 $ lsblk
@@ -764,12 +821,15 @@ nvme0n1               259:0    0 465.8G  0 disk
                                                  /mnt
 ```
 
+Install basic packages
+
 ```bash
 pacstrap /mnt amd-ucode base base-devel bash-completion \
   linux linux-headers linux-firmware openssh vim btrfs-progs
 ```
 
-During creation of initramfs, may occur some problems, all will be fixed in later steps
+> [!IMPORTANT]
+> Some issues may occur while creating the initramfs file. All will be fixed in the later steps.
 
 ```bash
 ==> Building image from preset: /etc/mkinitcpio.d/linux.preset: 'default'
@@ -807,14 +867,16 @@ genfstab -U -p /mnt > /mnt/etc/fstab
 arch-chroot /mnt
 ```
 
-#### Locale
+### Locale
 
 Set locale
 
 ```bash
 echo "en_US.UTF-8 UTF-8" >  /etc/locale.gen
 echo "pl_PL.UTF-8 UTF-8" >> /etc/locale.gen
+```
 
+```bash
 locale-gen
 ```
 
@@ -824,16 +886,15 @@ localectl set-keymap pl2
 
 > [!NOTE]
 > command `localectl set-keymap pl2` need to be repeat after first boot,
-> because now `/etc/vconsole.conf` is required to generate a correct `initramfs-linux.img`
-> but `localectl` not fully working in a `chroot`
+> because `localectl` not fully working in a `chroot`
 
 ```bash
 echo "KEYMAP=pl2" > /etc/vconsole.conf
 ```
 
-#### Users and permission
+### Users and permission
 
-Set root password
+Set the `root` password
 
 ```bash
 passwd root
@@ -856,7 +917,7 @@ Modify `/etc/sudoers` via `visudo` command
 ...
 ```
 
-#### Pacman configure
+### Pacman configure
 
 ```diff
 ...
@@ -879,6 +940,7 @@ pacman -S acpi \
   acpid \
   clevis \
   dmidecode \
+  dosfstools \
   git \
   go \
   htop \
@@ -903,18 +965,54 @@ pacman -S acpi \
 > [!TIP]
 > `acpi_call` should be replaced with  `acpi_call-dkms` if used LTS or different Kernel images
 
-#### Service to enable
+### Service to enable
 
 ```bash
 systemctl enable acpid
+systemctl enable blk-availability.service
 systemctl enable sshd
 systemctl enable systemd-networkd
 systemctl enable systemd-resolved
 ```
 
-#### Install YAY
+- `acpid` - comes with a number of predefined actions for triggered events, such as what should happen when you press the Power button on your machine.
 
-Remember to to switch to regular user `my_user`
+- `blk-availability` - responsible for managing the deactivation of LVM (Logical Volume Manager) devices and their associated filesystems during system shutdown.
+
+- `sshd` -  is the OpenSSH server process. It listens to incoming connections using the SSH protocol and acts as the server for the protocol.
+
+- `systemd-networkd` - is a system daemon that manages network configurations.
+
+- `systemd-resolved` - is a systemd service that provides network name resolution to local applications via a D-Bus interface.
+
+> [!IMPORTANT]
+> Please note that some users are reporting issues with `blk-availability.service` where unmounting is done in the wrong order in some cases.
+
+Example of logs when from `blk-availability.service`
+
+```bash
+Dec 08 23:36:23 qnap systemd[1]: Stopping Availability of block devices...
+Dec 08 23:36:23 qnap blkdeactivate[2253]: Deactivating block devices:
+Dec 08 23:36:23 qnap blkdeactivate[2253]:   [UMOUNT]: unmounting vg_files-lv_private (dm-18) mounted on /srv/private... done
+Dec 08 23:36:23 qnap blkdeactivate[2253]:   [UMOUNT]: unmounting vg_files-lv_media (dm-13) mounted on /srv/media... done
+Dec 08 23:36:23 qnap blkdeactivate[2253]:   [UMOUNT]: unmounting vg_iscsi-lv_iscsi (dm-14) mounted on /srv/iscsi... done
+Dec 08 23:36:23 qnap blkdeactivate[2253]:   [UMOUNT]: unmounting vg_root-lv_root (dm-1) mounted on /home... skipping
+Dec 08 23:36:24 qnap blkdeactivate[2253]:   [LVM]: deactivating Volume Group vg_files... done
+Dec 08 23:36:24 qnap blkdeactivate[2253]:   [DM]: deactivating crypt device crypt_cache_files (dm-5)... done
+Dec 08 23:36:24 qnap blkdeactivate[2253]:   [DM]: deactivating crypt device crypt_files (dm-3)... done
+Dec 08 23:36:24 qnap blkdeactivate[2253]:   [MD]: deactivating raid6 device md0... done
+Dec 08 23:36:25 qnap blkdeactivate[2253]:   [LVM]: deactivating Volume Group vg_iscsi... done
+Dec 08 23:36:25 qnap blkdeactivate[2253]:   [DM]: deactivating crypt device crypt_cache_iscsi (dm-6)... done
+Dec 08 23:36:25 qnap blkdeactivate[2253]:   [DM]: deactivating crypt device crypt_iscsi (dm-4)... done
+Dec 08 23:36:25 qnap blkdeactivate[2253]:   [MD]: deactivating raid1 device md1... done
+Dec 08 23:36:25 qnap systemd[1]: blk-availability.service: Deactivated successfully.
+Dec 08 23:36:25 qnap systemd[1]: Stopped Availability of block devices.
+Dec 08 23:36:25 qnap systemd[1]: blk-availability.service: Consumed 1.292s CPU time, 14.1M memory peak.
+```
+
+### Install YAY
+
+Remember to switch to a regular user `my_user`
 
 ```bash
 git clone https://aur.archlinux.org/yay.git
@@ -922,11 +1020,13 @@ cd yay
 makepkg -si
 ```
 
+Enabling the editing function
+
 ```bash
 yay --editmenu --save
 ```
 
-#### AUR packages
+### AUR packages
 
 ```bash
 yay -S fzf-marks \
@@ -936,9 +1036,7 @@ yay -S fzf-marks \
   fstabfmt \
 ```
 
-TODO: validate mkinitcpio-systemd-root-password
-
-#### Configure network
+### Configure network
 
 > [!TIP]
 > Read this [guide](https://www.freedesktop.org/software/systemd/man/latest/systemd.network.html) about network configuration via `systemd-networkd`.
@@ -963,7 +1061,7 @@ UseNTP=true
 ```
 
 ```bash
-# /etc/systemd/network/10G.link
+# /etc/systemd/network/10-nas0.link
 
 [Match]
 Type=ether
@@ -977,21 +1075,52 @@ RxFlowControl=yes
 TxFlowControl=yes
 ```
 
-##### Useful command
+```bash
+# /etc/systemd/network/20-iscsi0.link 
+
+[Match]
+Type=ether
+MACAddress=24:5e:be:80:31:6a
+
+[Link]
+Name=iscsi0
+MACAddressPolicy=persistent
+AutoNegotiationFlowControl=yes
+RxFlowControl=yes
+TxFlowControl=yes
+```
+
+#### Useful command
 
 Check flowcontrol
 
 ```bash
-ethtool -a nas0                                                                                                                                    ✔  ⚡  66  00:22:53 
-Pause parameters for nas0:
+ethtool -a iscsi0                                                                                                                                    ✔  ⚡  66  00:22:53 
+Pause parameters for iscsi0:
 Autonegotiate:  on
 RX:             on
 TX:             on
 ```
 
-#### Initramfs image
+Check the network neighbors
 
-Package `mkinitcpio-systemd-extras` will delivery all necessary hooks [sd-clevis](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Clevis), [sd-network](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Networking), [sd-resolve](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Name-Resolution) require auto-unlock root partition via network, please read documentation careful.
+```bash
+networkctl lldp
+```
+
+```bash
+networkctl list
+
+IDX LINK    TYPE     OPERATIONAL SETUP      
+  1 lo      loopback carrier     unmanaged
+  2 nas0    ether    routable    configured 
+  3 iscsi0  ether    routable    configured 
+  4 enp15s0 ether    no-carrier  configuring
+```
+
+### Initramfs image
+
+The `mkinitcpio-systemd-extras` package will provide all the necessary hooks: sd-clevis, sd-network, sd-resolve. It is required to automatically unlock the root partition over the network; please read the [documentation](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki) carefully.
 
 Modules:
 
@@ -1003,9 +1132,9 @@ Hooks:
 
 - `btrfs` - adding all BTRFS modules, which can be helpful to fix root partition
 - `mdadm_udev` - provide support for assembling RAID arrays via udev
-- `sd-network` - adding support for network
-- `sd-resolve` - adding support for resolving DNS names
-- `sd-clevis` - adding support for clevis
+- `sd-network` - adding [support](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Networking) for network
+- `sd-resolve` - adding [support](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Name-Resolution) for resolving DNS names
+- `sd-clevis` - adding [support](https://github.com/wolegis/mkinitcpio-systemd-extras/wiki/Clevis) for clevis
 - `lvm2` - Adds the device mapper kernel module and the lvm tool to the image.
 
 ```bash
@@ -1023,15 +1152,16 @@ HOOKS=(base systemd btrfs autodetect microcode modconf kms keyboard sd-vconsole 
 >
 > Remember to recreate initramfs `mkinitcpio -p linux`
 
-#### UEFI boot manager
+### UEFI boot manager
 
-Executing the command below will copy the necessary files/directories to `/boot`
+Executing the command below will copy the necessary files and directories to `/boot` folder
 
 ```bash
 bootctl install
 ```
 
-then create an entry for boot with UART support, remember to update the `root` UUID (use `blkid` or `lsblk -f`)
+then create an entry for boot with UART support, remember to update the `root` UUID  
+(use `blkid` or `lsblk -f`)
 
 ```bash
 # /boot/loader/entries/arch.conf
@@ -1040,7 +1170,7 @@ title Arch
 linux /vmlinuz-linux
 initrd /initramfs-linux.img
 initrd /amd-ucode.img
-options options rd.neednet=1 rd.luks.uuid=7f0cc063-e383-4244-b4cb-12e6c396947f root=UUID=e0ff3e81-a516-4dbf-8103-8503655db764 rw mitigations=off audit=auto console=ttyS0,115200n8 console=tty0 loglevel=6 8250.nr_uarts=2 8250.skip_txen_test=1  
+options options rd.neednet=1 rd.luks.uuid=7f0cc063-e383-4244-b4cb-12e6c396947f root=UUID=e0ff3e81-a516-4dbf-8103-8503655db764 rw mitigations=auto audit=off console=ttyS0,115200n8 console=tty0 loglevel=6 8250.nr_uarts=2 8250.skip_txen_test=1  
 ```
 
 > [!WARNING]
@@ -1077,6 +1207,7 @@ LLMNR=yes
 Cache=no-negative
 ReadEtcHosts=yes
 StaleRetentionSec=0
+# Domains=mydomain.internal if internal domain is used
 ```
 
 ```bash
@@ -1103,9 +1234,13 @@ cp /etc/shel/* /home/my_user
 
 #### Timezone and date
 
+Set proper timezone
+
 ```bash
 timedatectl set-timezone Europe/Warsaw
 ```
+
+Enable NTP client
 
 ```bash
 timedatectl set-ntp true
@@ -1140,7 +1275,7 @@ hostnamectl hostname qnap
 
 #### Locale (again)
 
-Executing this command one again, will recreate `/etc/vconsole.conf` file
+Run this commands again, which will update the `/etc/vconsole.conf` file with the proper value
 
 ```bash
 localectl set-keymap pl2
@@ -1252,63 +1387,13 @@ dev.raid.speed_limit_max = 800000
 
   A throttle ceiling for those same background tasks. If the array and disks are fast enough, the kernel won’t let resync/rebuild exceed ~0.8 GB/s. Higher values finish rebuilds sooner (reducing time-at-risk) but can steal I/O from your applications while the operation runs.
 
-### UART fix
-
-In the [Board/UART](#uart) section, it was mentioned that in newer Linux `6.X` kernels, the UART interface is unstable, the trail leads to unstable IRQ 4 interrupt, and as a result to hangs during transmit/receive data, switches to polling mode (timer-controlled) the UART operation is slower but stable.
-
-Manually step validation
-
-1. Check current `UART` settings
-
-   ```bash
-   $ cat /proc/tty/driver/serial
-   
-   serinfo:1.0 driver revision:
-   0: uart:16550A port:000003F8 irq:4 tx:121 rx:0 RTS|DTR
-   1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
-   ```
-
-2. Switch `IRQ 4` to `IRQ 0` (polling mode)
-
-   ```bash
-   setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0
-   ```
-
-3. Validate change
-
-   ```bash
-   $ cat /proc/tty/driver/serial
-   
-   serinfo:1.0 driver revision:
-   0: uart:16550A port:000003F8 irq:0 tx:450 rx:0 RTS|DTR
-   1: uart:16550A port:000002F8 irq:3 tx:0 rx:0
-   ```
-
-4. Turn off the power suspend for UART
-
-    ```bash
-    echo on | sudo tee /sys/class/tty/ttyS0/device/power/control
-    ```
-
-To apply these changes automatically on every boot, create following `udev` rule:
-
-```bash
-# /etc/udev/rules.d/99-ttyS0-nopm.rules
-
-KERNEL=="ttyS0", RUN+="/sbin/setserial /dev/ttyS0 uart 16550A port 0x3f8 irq 0"
-ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyS0", ATTR{device/power/control}="on"
-```
-
-> [!TIP]
-> `setserial` needs to be installed from [AUR](https://aur.archlinux.org/packages/setserial)
-
 #### Agetty with UART
 
-After switching the UART to polling mode, agetty works correctly, there is no need to modify the service.
+After switching the UART to [polling mode](#uart-fix), agetty works correctly, there is no need to modify the service.
 
-## NAS Server
+# NAS Server
 
-### Disk Topology
+## Disk Topology
 
 ```bash
 Media & Private with cache writethrough
@@ -1334,8 +1419,9 @@ Media & Private with cache writethrough
 |   sdc1  |   sdd1  |   sde1  |   sdf1  |  sdg1  |                  nvme0n1p1                |
 |         |         |         |         |        |                                           |
 +---------+---------+---------+---------+--------+-------------------------------------------+
+```
 
-
+```bash
 ISCSI with cache writeback
 
 +--------------------+-------------------+
@@ -1357,13 +1443,49 @@ ISCSI with cache writeback
 +---------+---------+--------------------+
 ```
 
-- `writethrough` - Writes go to both the cache device and the origin device simultaneously; reads can be served from cache. Improves read performance and is safe against cache failure, but write performance is roughly the same as without caching.
+- `writethrough`:
+  - Writes go to both the cache device and the origin device simultaneously.
+  - Reads can be served from cache.
+  - Improves read performance and is safe against cache failure.
+  - Write performance is roughly the same as without caching.
 
-- `writeback` - Writes land in the cache first and are flushed to the origin later. Delivers fast writes and strong overall performance, but carries risk of data loss/inconsistency if the cache fails or power is lost (unless the cache has power-loss protection).
+- `writeback`:
+  - Writes land in the cache first and are flushed to the origin later.
+  - Delivers fast writes and strong overall performance,
+  - Carries risk of data loss/inconsistency if the cache fails or power is lost (unless the cache has power-loss protection).
 
-#### Partitions
+## NVMe cache
 
-##### RAID6 - prepare disk
+The cache will be built on `dm-cache` because there are two RAID arrays, which requires creating two partitions.
+
+```bash
++----------------------+--------------------+
+|                      |                    |
+|    Media & Files     |       ISCSI        |
+|        650GB         |       200GB        |
+|                      |                    |
++----------------------+--------------------+
+```
+
+> [!TIP]
+> It is a good practice not to allocate all the space of SSD disk, the free space can be used to replace the damaged memory.
+
+```bash
+Disk model: IR-SSDPR-P34B-01T-80                    
+Units: sectors of 1 * 4096 = 4096 bytes
+Sector size (logical/physical): 4096 bytes / 4096 bytes
+I/O size (minimum/optimal): 4096 bytes / 4096 bytes
+Disklabel type: gpt
+Disk identifier: AA8AF26B-4AFA-47A0-B3B3-BBEE1F8B2D0A
+
+Device             Start       End   Sectors  Size Type
+/dev/nvme1n1p1       256 170393855 170393600  650G Linux filesystem
+/dev/nvme1n1p2 170393856 222822655  52428800  200G Linux filesystem
+```
+
+## Shared files (Media and Private)
+
+### Partition
 
 Required disk configuration:
 
@@ -1384,53 +1506,7 @@ Device     Start        End    Sectors  Size Type
 /dev/sdc1   2048 7814035455 7814033408  3.6T Linux RAID
 ```
 
-##### RAID1 - prepare disk
-
-Required disk configuration:
-
-- Disk partition table need to use `GPT`
-- OS parition needs be `Linux RAID`
-- minimum 2 disk
-
-```bash
-Disk /dev/sda: 465.76 GiB, 500107862016 bytes, 976773168 sectors
-Disk model: HGST HTS725050A7
-Units: sectors of 1 * 512 = 512 bytes
-Sector size (logical/physical): 512 bytes / 4096 bytes
-I/O size (minimum/optimal): 4096 bytes / 4096 bytes
-Disklabel type: gpt
-Disk identifier: AE1FFFE4-0DE0-46D4-9EC7-01B071742FB0
-
-Device     Start       End   Sectors   Size Type
-/dev/sda1   2048 976773119 976771072 465.8G Linux RAID
-```
-
-##### NVMe cache - prepare disk
-
-The cache will be built on `dm-cache` because there are two RAID arrays, which requires creating two partitions.
-
-- 650G for files
-- 200G for iscsi
-
-> [!TIP]
-> It is a good practice not to allocate all the space of SSD disk, the free space can be used to replace the damaged memory.
-
-```bash
-Disk model: IR-SSDPR-P34B-01T-80                    
-Units: sectors of 1 * 4096 = 4096 bytes
-Sector size (logical/physical): 4096 bytes / 4096 bytes
-I/O size (minimum/optimal): 4096 bytes / 4096 bytes
-Disklabel type: gpt
-Disk identifier: AA8AF26B-4AFA-47A0-B3B3-BBEE1F8B2D0A
-
-Device             Start       End   Sectors  Size Type
-/dev/nvme1n1p1       256 170393855 170393600  650G Linux filesystem
-/dev/nvme1n1p2 170393856 222822655  52428800  200G Linux filesystem
-```
-
-### RAID via mdadm
-
-#### RAID6
+### RAID6
 
 ```bash
 mdadm --create /dev/md0 --level=6 \
@@ -1440,19 +1516,6 @@ mdadm --create /dev/md0 --level=6 \
   --name=files \
   /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sdd1 /dev/sde1
 ```
-
-#### RAID1
-
-```bash
-mdadm --create /dev/md0 --level=1 \
-  --raid-devices=2 \
-  --metadata=1.2 \
-  --chunk=256 --bitmap=internal \
-  --name=iscsi \
-  /dev/sdf1 /dev/sdg1
-```
-
-#### RAID configuration
 
 Add the RAID map to `/etc/mdadm.conf`
 
@@ -1465,7 +1528,6 @@ which should give the following results
 ```conf
 cat /etc/mdadm.conf 
 ARRAY /dev/md0 metadata=1.2 UUID=e9ab286b:4d2232ae:fbb328ae:96b98307
-ARRAY /dev/md1 metadata=1.2 UUID=cd295687:710983a2:93d611f8:2e32e0cf
 ```
 
 Check the RAID status
@@ -1474,9 +1536,6 @@ Check the RAID status
 $ cat /proc/mdstat
 
 Personalities : [raid1] [raid4] [raid5] [raid6] 
-md1 : active raid1 sdb1[1] sda1[0]
-      488253440 blocks super 1.2 [2/2] [UU]
-      bitmap: 0/4 pages [0KB], 65536KB chunk
 
 md0 : active raid6 sde1[2] sdd1[1] sdf1[3] sdc1[0] sdg1[4]
       11720653824 blocks super 1.2 level 6, 256k chunk, algorithm 2 [5/5] [UUUUU]
@@ -1485,177 +1544,35 @@ md0 : active raid6 sde1[2] sdd1[1] sdf1[3] sdc1[0] sdg1[4]
 unused devices: <none>
 ```
 
-##### Change the name
-
-If the array already exists, it will be automatically created with invalid names. To fix this, follow these steps.
-
-```bash
-mdadm --stop /dev/md127
-```
-
-```bash
-mdadm --assemble --update=name --name=iscsi /dev/md1 /dev/sda1 /dev/sdb1
-```
-
-#### RAID optimization
-
-```bash
-# /etc/udev/rules.d/99-md-raid.rules
-
-ACTION=="add|change", KERNEL=="md0", ATTR{md/stripe_cache_size}="8192"
-ACTION=="add|change", KERNEL=="md0", RUN+="/sbin/blockdev --setra 4096 /dev/md0"
-ACTION=="add|change", KERNEL=="md1", RUN+="/sbin/blockdev --setra 16384 /dev/md1"
-```
-
-- `RAID6` (MD0) benefits from a larger stripe cache to mitigate parity overhead and from a moderate readahead that aligns with full-stripe multiples, improving both normal sequential I/O and rebuild/check operations.
-
-- `RAID1` (MD1) doesn’t use stripe parity; therefore the stripe cache isn’t applicable. It does benefit from an even larger readahead when the expected workload is heavy, sequential reads—hence 8 MiB to maximize streaming performance.
-
-#### RAID Mail notification
-
-In order to send emails, a properly configured mail transfer agent is required [check Postfix section](#postfix)
-
-```conf
-MAILADDR user@domain
-```
-
-Verify that everything is working as it should, run the following command
-
-```bash
-mdadm --monitor --scan --oneshot --test
-```
-
-```bash
-mdadm --detail /dev/md0
-
-/dev/md0:
-           Version : 1.2
-     Creation Time : Fri Nov  7 19:17:06 2025
-        Raid Level : raid6
-        Array Size : 11720653824 (10.92 TiB 12.00 TB)
-     Used Dev Size : 3906884608 (3.64 TiB 4.00 TB)
-      Raid Devices : 5
-     Total Devices : 5
-       Persistence : Superblock is persistent
-
-     Intent Bitmap : Internal
-
-       Update Time : Wed Nov 12 23:17:02 2025
-             State : clean 
-    Active Devices : 5
-   Working Devices : 5
-    Failed Devices : 0
-     Spare Devices : 0
-
-            Layout : left-symmetric
-        Chunk Size : 256K
-
-Consistency Policy : bitmap
-
-              Name : qnap:0  (local to host qnap)
-              UUID : e9ab286b:4d2232ae:fbb328ae:96b98307
-            Events : 11474
-
-    Number   Major   Minor   RaidDevice State
-       0       8       33        0      active sync   /dev/sdc1
-       1       8       49        1      active sync   /dev/sdd1
-       2       8       65        2      active sync   /dev/sde1
-       3       8       81        3      active sync   /dev/sdf1
-       4       8       97        4      active sync   /dev/sdg1
-```
-
-##### Postfix
-
-```bash
-pacman -S postfix cyrus-sasl s-nail
-```
-
-Configuration
-
-```bash
-# /etc/postfix/main.cf
-
-relayhost = [smtp.gmail.com]:587
-smtp_use_tls = yes
-smtp_sasl_auth_enable = yes
-smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
-smtp_sasl_security_options = noanonymous
-smtp_sasl_tls_security_options = noanonymous
-```
-
-Password
-
-```bash
-# /etc/postfix/sasl_passwd 
-
-[smtp.gmail.com]:587    <user>@gmail.com:<password>
-```
-
-Encryption map
-
-```bash
-# /etc/postfix/tls_policy
-
-[smtp.gmail.com]:587 encrypt
-```
-
-```bash
-chmod 600 /etc/postfix/sasl_passwd
-postmap /etc/postfix/sasl_passwd
-postmap /etc/postfix/tls_policy
-```
-
-Restart service and check the status
-
-```bash
-systemctl restart postfix.service
-systemctl enable postfix.service
-```
-
-Test mail
-
-```bash
-echo "This is the body of an encrypted email" | mail -s "This is the subject line" mygmaildest@gmail.com
-```
-
-> [!IMPORTANT]
->
-> Add hook `mdadm_udev` after `block` to `/etc/mkinitcpio.conf`  
-> `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
->
-> In case you want to have access to RAID in early boot
-> `MODULES=(md_mod raid6_pq raid1)`
-
-### dm-crypt
+### Encryption
 
 > [!TIP]
-> Before taking any action, please read the encryption description in [description](#encryption-root).
-
-Encrypt RAID6, RAID1, and both cache partitions
+> Before taking any action, please read the encryption [guide](#encryption-root).
 
 ```bash
 cryptsetup luksFormat /dev/md0 -s 256 -c aes-xts-plain64 -h sha512
+cryptsetup luksFormat /dev/nvme1n1p1 -s 256 -c aes-xts-plain64 -h sha512
 ```
 
 To automatically unlock the encrypted partition on boot, create a binary key, please check this [guide](#binary-key-file)
 
 ```bash
 dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/srv_files.key
+dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/nvme_cache_files.key
 ```
 
 ```bash
 # /etc/cryptsetup-keys.d
 
 -rw------- 1 root root 2048 Nov  8 19:53 nvme_cache_files.key
--rw------- 1 root root 2048 Nov  8 19:53 nvme_cache_iscsi.key
 -rw------- 1 root root 2048 Nov  8 19:52 srv_files.key
--rw------- 1 root root 2048 Nov  8 19:53 srv_iscsi.key
 ```
 
-Then add the binary key to available slots for each partition
+Then add the binary key to available slots
 
 ```bash
 cryptsetup luksAddKey -S 7 /dev/md0 /etc/cryptsetup-keys.d/srv_files.key
+cryptsetup luksAddKey -S 7 /dev/nvme1n1p1 /etc/cryptsetup-keys.d/nvme_cache_files.key
 ```
 
 Update `crypttab`
@@ -1664,12 +1581,10 @@ Update `crypttab`
 # /etc/crypttab 
 
 crypt_files         UUID=c4f4f635-762a-4102-a049-123456789011   /etc/cryptsetup-keys.d/srv_files.key            luks
-crypt_iscsi         UUID=2790f108-1a01-4501-abae-123456789011   /etc/cryptsetup-keys.d/srv_iscsi.key            luks
-crypt_cache_files   UUID=9bc667a9-ed69-4b4a-93af-123456789011   /etc/cryptsetup-keys.d/nvme_cache_files.key     luks
 crypt_cache_iscsi   UUID=8bf542fe-a3cd-4944-97fe-123456789011   /etc/cryptsetup-keys.d/nvme_cache_iscsi.key     luks
 ```
 
-Check if auto unlock is configured correctly
+After `daemon-reload` it should create following services
 
 ```bash
 systemctl daemon-reload 
@@ -1678,15 +1593,15 @@ systemctl daemon-reload
 Generate following services
 
 ```bash
-systemd-cryptsetup@crypt_cache_iscsi.service 
-systemd-cryptsetup@crypt_cache_iscsi.service 
-systemd-cryptsetup@crypt_cache_iscsi.service 
-systemd-cryptsetup@crypt_cache_files.service 
+systemctl status systemd-cryptsetup@crypt_cache_files.service
+systemctl status systemd-cryptsetup@crypt_files.service
 ```
 
+Start service to check if they unlock automatically
+
 ```bash
-systemctl start systemd-cryptsetup@crypt_cache_iscsi.service
-systemctl status systemd-cryptsetup@crypt_cache_iscsi.service
+systemctl start systemd-cryptsetup@crypt_cache_files.service
+systemctl start systemd-cryptsetup@crypt_files.service
 ```
 
 > [!IMPORTANT]
@@ -1695,8 +1610,6 @@ systemctl status systemd-cryptsetup@crypt_cache_iscsi.service
 > `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
 
 ### LVM
-
-#### Files (Media & Private)
 
 ```bash
 pvcreate /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
@@ -1742,147 +1655,25 @@ lvcreate -L  12G -n cachemeta_private vg_files /dev/mapper/crypt_cache_files
 > Add hook `lvm2` after `sd-encrypt` to `/etc/mkinitcpio.conf`  
 > `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
 
-##### Cache (Media & Private)
-
-Convert SSD `cachemeta_media` and `cachedata_media` to cache pool
-
-```bash
-lvconvert --type cache-pool --chunksize 512k --poolmetadata vg_files/cachemeta_media vg_files/cachedata_media
-lvconvert --type cache --cachepool vg_files/cachedata_media --cachemode writethrough vg_files/lv_media
-```
-
-Convert SSD `cachemeta_private` and `cachedata_private` to cache pool
-
-```bash
-lvconvert --type cache-pool --chunksize 512k --poolmetadata vg_files/cachemeta_private vg_files/cachedata_private
-lvconvert --type cache --cachepool vg_files/cachedata_private --cachemode writethrough vg_files/lv_private
-```
-
-Validation
-
-```bash
-$ lvs
-
-  LV         VG       Attr       LSize  Pool     Origin           Data%  Meta%  Move Log Cpy%Sync Convert
-  lv_media   vg_files -wi-a-----  6.00t                            0.00   0.05            0.00            
-  lv_private vg_files -wi-a----- <4.92t                            0.00   0.05            0.00
-```
-
-Should change to this
-
-```bash
-$ lvs
-
-  LV         VG       Attr       LSize  Pool                      Origin             Data%  Meta%  Move Log Cpy%Sync Convert
-  lv_media   vg_files Cwi-a-C---  6.00t [cachedata_media_cpool]   [lv_media_corig]   0.00   0.05            0.00            
-  lv_private vg_files Cwi-a-C--- <4.92t [cachedata_private_cpool] [lv_private_corig] 0.00   0.05            0.00 
-```
-
-Cache usage, (13 916 × 512 KiB ≈ 6.8 GiB)
-
-```bash
-lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_files
-  LV         CacheMode    CachePolicy CacheTotalBlocks CacheUsedBlocks 
-  lv_media   writethrough smq                   614400            13916
-  lv_private writethrough smq                   614400                0
-```
-
-#### ISCSI
-
-```bash
-pvcreate /dev/mapper/crypt_iscsi /dev/mapper/crypt_cache_iscsi
-```
-
-```bash
-vgcreate vg_iscsi /dev/mapper/crypt_iscsi /dev/mapper/crypt_cache_iscsi
-```
-
-```bash
-lvcreate -L 449G -n lv_iscsi vg_iscsi /dev/mapper/crypt_iscsi
-```
-
-```bash
-lvcreate -L 180G -n cachedata_iscsi vg_iscsi /dev/mapper/crypt_cache_iscsi
-lvcreate -L 12G -n cachemeta_iscsi vg_iscsi /dev/mapper/crypt_cache_iscsi
-```
-
-##### Cache ISCSI
-
-```bash
-lvconvert --type cache-pool --chunksize 256k --poolmetadata vg_iscsi/cachemeta_iscsi vg_iscsi/cachedata_iscsi
-```
-
-```bash
-lvconvert --type cache --cachepool vg_iscsi/cachedata_iscsi --cachemode writeback vg_iscsi/lv_iscsi
-```
-
 Validate
 
 ```bash
-lvs -a -o lv_name,segtype,cachemode,devices vg_iscsi
-  
-  LV                            Type       CacheMode Devices                             
-  [cachedata_iscsi_cpool]       cache-pool writeback cachedata_iscsi_cpool_cdata(0)      
-  [cachedata_iscsi_cpool_cdata] linear               /dev/mapper/crypt_cache_iscsi(0)    
-  [cachedata_iscsi_cpool_cmeta] linear               /dev/mapper/crypt_cache_iscsi(46080)
-  lv_iscsi                      cache      writeback lv_iscsi_corig(0)                   
-  [lv_iscsi_corig]              linear               /dev/mapper/crypt_iscsi(0)          
-  [lvol0_pmspare]               linear               /dev/mapper/crypt_iscsi(114944) 
+lvs -a -o lv_name,segtype,cachemode,devices vg_files
+  LV                              Type       CacheMode    Devices                              
+  [cachedata_media_cpool]         cache-pool writethrough cachedata_media_cpool_cdata(0)       
+  [cachedata_media_cpool_cdata]   linear                  /dev/mapper/crypt_cache_files(0)     
+  [cachedata_media_cpool_cmeta]   linear                  /dev/mapper/crypt_cache_files(76800) 
+  [cachedata_private_cpool]       cache-pool writethrough cachedata_private_cpool_cdata(0)     
+  [cachedata_private_cpool_cdata] linear                  /dev/mapper/crypt_cache_files(82944) 
+  [cachedata_private_cpool_cmeta] linear                  /dev/mapper/crypt_cache_files(159744)
+  lv_media                        cache      writethrough lv_media_corig(0)                    
+  [lv_media_corig]                linear                  /dev/mapper/crypt_files(0)           
+  lv_private                      cache      writethrough lv_private_corig(0)                  
+  [lv_private_corig]              linear                  /dev/mapper/crypt_files(1572864)     
+  [lvol0_pmspare]                 linear                  /dev/mapper/crypt_cache_files(79872) 
 ```
 
-#### Troubleshooting
-
-##### vgcreate - `inconsistent logical block sizes`
-
-Problem is different block size.
-
-```bash
-lsblk -o NAME,TYPE,LOG-SEC,PHY-SEC,MIN-IO,OPT-IO  /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
-
-NAME                 TYPE  LOG-SEC PHY-SEC MIN-IO OPT-IO
-crypt_files          crypt    4096    4096   4096      0
-crypt_cache_files    crypt     512     512    512      0
-```
-
-> [!WARNING]
-> Check this [guide](#checklist-before-partitioning) how to change the block size
-> Partitions need to be [recreated](#nvme-cache---prepare-disk)
-
-##### Useful command
-
-Check available space to create another LV
-
-```bash
-vgs
-  VG       #PV #LV #SN Attr    VSize    VFree  
-  vg_files   2   2   0 wz--n--   11.55t  13.98g
-  vg_iscsi   2   1   0 wz--n-- <665.60g <12.60g
-  vg_root    1   1   0 wz--n--  464.74g 214.74g
-```
-
-Check cache with raw result
-
-```bash
-$ lvs -o lv_name,cachemode,cache_policy,chunksize,cache_total_blocks,cache_used_blocks,cache_dirty_blocks vg_files
-
-  LV         CacheMode    CachePolicy Chunk   CacheTotalBlocks CacheUsedBlocks  CacheDirtyBlocks
-  lv_media   writethrough smq         512.00k           614400            31186                0
-  lv_private writethrough smq         512.00k           614400              207                0
-
-```
-
-Where for example `512k x 30851 = 15795712` -> 15G
-
-Check cache with re-calculated value
-
-```bash
-lvs -o lv_name,chunksize,cache_total_blocks,cache_used_blocks --noheadings vg_files | awk '{cs=$2; gsub(/k/,"",cs); used=$4*cs/1024/1024; tot=$3*cs/1024/1024; printf "%s: %.2f/%.2f GiB (%.2f%%)\n",$1,used,tot,(used/tot)*100}'
-
-lv_media: 15.07/300.00 GiB (5.02%)
-lv_private: 0.10/300.00 GiB (0.03%)
-```
-
-### BTRFS - File system
+### BTRFS
 
 #### Media
 
@@ -1947,7 +1738,7 @@ mount -a
 Enable BTRFS quota
 
 ```bash
-btrfs quota enable 
+btrfs quota enable /srv/media/
 ```
 
 #### Private
@@ -2013,207 +1804,8 @@ mount -a
 Enable BTRFS quota
 
 ```bash
-btrfs quota enable 
+btrfs quota enable /srv/private
 ```
-
-#### Snapshots - snapper
-
-Create snapper config
-
-```bash
-snapper -c private create-config /srv/private
-snapper -c media create-config /srv/media
-```
-
-Modify the configuration (`/etc/snapper/configs`) to get the following results
-
-```bash
-$ snapper -c media get-config
-
-Key                      │ Value
-─────────────────────────┼────────────
-ALLOW_GROUPS             │
-ALLOW_USERS              │ my_user
-BACKGROUND_COMPARISON    │ no
-EMPTY_PRE_POST_CLEANUP   │ yes
-EMPTY_PRE_POST_MIN_AGE   │ 3600
-FREE_LIMIT               │ 0.15
-FSTYPE                   │ btrfs
-NUMBER_CLEANUP           │ yes
-NUMBER_LIMIT             │ 20
-NUMBER_LIMIT_IMPORTANT   │ 10
-NUMBER_MIN_AGE           │ 3600
-QGROUP                   │
-SPACE_LIMIT              │ 0.15
-SUBVOLUME                │ /srv/media
-SYNC_ACL                 │ yes
-TIMELINE_CLEANUP         │ yes
-TIMELINE_CREATE          │ yes
-TIMELINE_LIMIT_DAILY     │ 7
-TIMELINE_LIMIT_HOURLY    │ 0
-TIMELINE_LIMIT_MONTHLY   │ 12
-TIMELINE_LIMIT_QUARTERLY │ 0
-TIMELINE_LIMIT_WEEKLY    │ 4
-TIMELINE_LIMIT_YEARLY    │ 3
-TIMELINE_MIN_AGE         │ 3600
-```
-
-The most important:
-
-- `SPACE_LIMIT="0.15"` - snapshots can take only 15% of space
-- `FREE_LIMIT="0.15"` - always keep 15% of free space
-- `TIMELINE_LIMIT_HOURLY="0"` - do not create hourly snapshot
-- `NUMBER_LIMIT="20"` - limit the number of snapshots
-- `BACKGROUND_COMPARISON="no"` - disabling CPU-consuming background comparison
-- `ALLOW_USERS="my_admin"` - give the `my_user` user the ability to manage the snapshot
-- `SYNC_ACL="yes"` - pass permissions of user `my_user` to snapshot
-
-Enable auto timeline snapshots and cleanup process.
-
-```bash
-systemctl enable snapper-cleanup.timer
-systemctl enable snapper-timeline.timer
-
-systemctl start snapper-cleanup.timer
-systemctl start snapper-timeline.timer
-```
-
-Check timers
-
-```bash
-$ systemctl list-timers 
-
-NEXT                            LEFT LAST                              PASSED UNIT                             ACTIVATES                         
-Sun 2025-11-30 23:00:00 CET    36min Sun 2025-11-30 22:00:05 CET    23min ago snapper-timeline.timer           snapper-timeline.service
-Sun 2025-11-30 23:21:28 CET    57min Sun 2025-11-30 22:21:28 CET 2min 17s ago snapper-cleanup.timer            snapper-cleanup.service
-Mon 2025-12-01 00:00:00 CET 1h 36min Sun 2025-11-30 00:00:02 CET      22h ago shadow.timer                     shadow.service
-Mon 2025-12-01 17:29:20 CET      19h Sun 2025-11-30 17:29:20 CET 4h 54min ago systemd-tmpfiles-clean.timer     systemd-tmpfiles-clean.service
-Wed 2025-12-03 02:40:33 CET   2 days Mon 2025-11-24 09:49:13 CET            - archlinux-keyring-wkd-sync.timer archlinux-keyring-wkd-sync.service
-```
-
-##### Useful command
-
-Command `du` can provide incorrect space usage because of the snapshots implementation
-
-```bash
-$ du -hd1 /srv/media
-
-61G     /srv/media/.snapshots
-5.1G    /srv/media/video
-0       /srv/media/music
-117M    /srv/media/photos
-66G     /srv/media
-```
-
-Check the real space used
-
-```bash
-btrfs filesystem du -s /srv/media
-     Total   Exclusive  Set shared  Filename
-  65.36GiB       0.00B     5.17GiB  /srv/media
-```
-
-Show subvolume status
-
-```bash
-btrfs subvolume show /srv/media/
-@media
-        Name:                   @media
-        UUID:                   bf0a0790-d875-a74b-84ff-d55808da366e
-        Parent UUID:            -
-        Received UUID:          -
-        Creation time:          2025-11-24 08:31:27 +0100
-        Subvolume ID:           256
-        Generation:             106
-        Gen at creation:        10
-        Parent ID:              5
-        Top level ID:           5
-        Flags:                  -
-        Send transid:           0
-        Send time:              2025-11-24 08:31:27 +0100
-        Receive transid:        0
-        Receive time:           -
-        Snapshot(s):
-                                @media/.snapshots/1/snapshot
-                                @media/.snapshots/2/snapshot
-                                @media/.snapshots/3/snapshot
-                                @media/.snapshots/4/snapshot
-                                @media/.snapshots/5/snapshot
-                                @media/.snapshots/6/snapshot
-                                @media/.snapshots/7/snapshot
-                                @media/.snapshots/8/snapshot
-        Quota group:            0/256
-          Limit referenced:     -
-          Limit exclusive:      -
-          Usage referenced:     5.17GiB
-          Usage exclusive:      16.00KiB
-```
-
-### Disk power managed - hdparm
-
-TODO: add description
-
-```bash
-# /etc/systemd/system/hdparm-raid5.service
-
-[Unit]
-Description=Set the sleep time for the RAID5
-After=multi-user.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/hdparm -q -S 120 /dev/sdc /dev/sdd /dev/sde /dev/sdf /dev/sdg
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-# /etc/systemd/system/hdparm-raid1.service
-
-[Unit]
-Description=Set the sleep time for the RAID1
-After=multi-user.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/hdparm -q -S 120 /dev/sda /dev/sdb
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-systemctl daemon-reload
-systemctl enable hdparm-raid5.service
-systemctl enable hdparm-raid1.service
-
-systemctl start hdparm-raid5.service
-systemctl start hdparm-raid1.service
-```
-
-Check if disk are sleep after 10 minutes
-
-```bash
-check_disk_pm(){
-  for d in /dev/sd[a-g]; do
-     printf "%s: " "$d"; sudo hdparm -C "$d" 2>/dev/null | awk '/state/ {print $4}'
-  done
-}
-```
-
-```bash
- check_disk_pm                                                                                                                                                           ✔  ⚡  55  17:51:12 
-/dev/sda: standby
-/dev/sdb: standby
-/dev/sdc: standby
-/dev/sdd: standby
-/dev/sde: standby
-/dev/sdf: standby
-/dev/sdg: standby
-```
-
-## Share files
 
 ### Samba
 
@@ -2223,9 +1815,9 @@ Install samba package
 pacman -S samba
 ```
 
-Configure `/etc/samba/smb.conf`
-
 ```bash
+# /etc/samba/smb.conf 
+
 [global]
    disable netbios = yes
    server smb transports = 445
@@ -2284,6 +1876,12 @@ Configure `/etc/samba/smb.conf`
    root preexec close = yes
 ```
 
+Validate Samba config
+
+```bash
+testparm -s
+```
+
 Create dedicated `smb-media` group
 
 ```bash
@@ -2302,7 +1900,24 @@ chmod 2775 /srv/media
 setfacl -m g:smb-media:rwx /srv/media
 setfacl -m d:g:smb-media:rwx /srv/media
 ```
-TODO: add script
+
+Add script
+
+```bash
+# cat /usr/local/sbin/samba-mkdir-private.sh
+
+#!/bin/sh
+u="$1"
+base="/srv/private"
+dir="$base/$u"
+if [ ! -d "$dir" ]; then
+  umask 077
+  mkdir -p -- "$dir" || exit 1
+  chown "$u" "$dir" || exit 1
+  chmod 700 "$dir"
+fi
+exit 0
+```
 
 Enable and restart samba service
 
@@ -2311,7 +1926,7 @@ systemctl enable smb.service
 systemctl start smb.service
 ```
 
-#### Advertising SAMBA - mDNS
+#### Advertising SAMBA (mDNS)
 
 By default, Samba wants to use mDNS through [Avahi](https://wiki.archlinux.org/title/Avahi), and it tries to start it via a [D-BUS](https://wiki.archlinux.org/title/D-Bus) request, so the Avahi service must be [masked](https://wiki.archlinux.org/title/Systemd).
 
@@ -2404,6 +2019,7 @@ Validation
 
 ```bash
 $ su my_new_user
+
 This account is currently not available.
 ```
 
@@ -2419,49 +2035,31 @@ Show users status
 pdbedit -L -v
 ```
 
-#### NSSWITCH 
+#### Name Service Switch
 
-#### Useful command
-
-Show processes
+Read this [guide](https://wiki.archlinux.org/title/Domain_name_resolution) to understand how Name Service Switch works.
 
 ```bash
-smbstatus -p
+# /etc/nsswitch.conf
 
-Samba version 4.23.3
-PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              
-----------------------------------------------------------------------------------------------------------------------------------------
-2677    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51942)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2674    my_user      users        10.0.12.30 (ipv4:10.0.12.30:38898)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2669    my_user      users        10.0.12.30 (ipv4:10.0.12.30:48760)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2679    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51962)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2701    my_user      users        10.0.12.30 (ipv4:10.0.12.30:49328)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2697    my_user      users        10.0.12.30 (ipv4:10.0.12.30:42660)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2660    my_user      users        10.0.12.30 (ipv4:10.0.12.30:48720)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2678    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51958)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-2699    my_user      users        10.0.12.30 (ipv4:10.0.12.30:42054)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
-```
+passwd: files systemd
+group: files [SUCCESS=merge] systemd
+shadow: files systemd
+gshadow: files systemd
 
-```bash
-smbstatus -S
+publickey: files
 
-Service      pid     Machine       Connected at                     Encryption   Signing     
----------------------------------------------------------------------------------------------
-private      2660    10.0.12.30    Wed Nov 26 17:17:38 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2678    10.0.12.30    Wed Nov 26 17:17:56 2025 CET     AES-128-GCM  AES-128-GMAC
-private      2701    10.0.12.30    Wed Nov 26 17:21:25 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2677    10.0.12.30    Wed Nov 26 17:17:54 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2679    10.0.12.30    Wed Nov 26 17:17:57 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2674    10.0.12.30    Wed Nov 26 17:17:46 2025 CET     AES-128-GCM  AES-128-GMAC
-private      2699    10.0.12.30    Wed Nov 26 17:21:05 2025 CET     AES-128-GCM  AES-128-GMAC
-media        2669    10.0.12.30    Wed Nov 26 17:17:40 2025 CET     AES-128-GCM  AES-128-GMAC
-private      2697    10.0.12.30    Wed Nov 26 17:21:00 2025 CET     AES-128-GCM  AES-128-GMAC
-```
+hosts: files resolve [!UNAVAIL=return] dns myhostname
+# in case of VM/dockers
+# hosts: files resolve [!UNAVAIL=return] dns myhostname mymachines
+networks: files
 
-Validate Samba config
+protocols: files
+services: files
+ethers: files
+rpc: files
 
-```bash
-testparm -s
+netgroup: files
 ```
 
 ### DLNA
@@ -2499,7 +2097,7 @@ systemctl start minidlna
 Unfortunately, minidlna does not generate thumbs on its own, so a script is needed to generate it.
 This script will skip existing thumbs and will not replace them.
 
-```sh
+```bash
 #!/usr/bin/env bash
 
 SRC_DIR="/srv/media/video/"
@@ -2568,9 +2166,230 @@ chown gerbera:gerbera /var/cache/gerbera
 >
 > Remember to disable UI or enable a password for protection.
 
-## SSD TRIM
+
+
+
+
+
+
+
+
 
 ## ISCSI
+
+### Partition
+
+Required disk configuration:
+
+- Disk partition table need to use `GPT`
+- OS parition needs be `Linux RAID`
+- minimum 2 disk
+
+```bash
+Disk /dev/sda: 465.76 GiB, 500107862016 bytes, 976773168 sectors
+Disk model: HGST HTS725050A7
+Units: sectors of 1 * 512 = 512 bytes
+Sector size (logical/physical): 512 bytes / 4096 bytes
+I/O size (minimum/optimal): 4096 bytes / 4096 bytes
+Disklabel type: gpt
+Disk identifier: AE1FFFE4-0DE0-46D4-9EC7-01B071742FB0
+
+Device     Start       End   Sectors   Size Type
+/dev/sda1   2048 976773119 976771072 465.8G Linux RAID
+```
+
+### Encryption
+
+> [!TIP]
+> Before taking any action, please read the encryption [guide](#encryption-root).
+
+```bash
+cryptsetup luksFormat /dev/md1 -s 256 -c aes-xts-plain64 -h sha512
+cryptsetup luksFormat /dev/nvme1n1p2 -s 256 -c aes-xts-plain64 -h sha512
+```
+
+To automatically unlock the encrypted partition on boot, create a binary key, please check this [guide](#binary-key-file)
+
+```bash
+dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/srv_iscsi.key
+dd bs=512 count=4 if=/dev/random iflag=fullblock | install -m 0600 /dev/stdin /etc/cryptsetup-keys.d/nvme_cache_iscsi.key
+```
+
+```bash
+# /etc/cryptsetup-keys.d
+
+-rw------- 1 root root 2048 Nov  8 19:53 nvme_cache_iscsi.key
+-rw------- 1 root root 2048 Nov  8 19:52 srv_iscsi.key
+```
+
+Then add the binary key to available slots
+
+```bash
+cryptsetup luksAddKey -S 7 /dev/md1 /etc/cryptsetup-keys.d/srv_iscsi.key
+cryptsetup luksAddKey -S 7 /dev/nvme1n1p2 /etc/cryptsetup-keys.d/nvme_cache_iscsi.key
+```
+
+Update `crypttab`
+
+```bash
+# /etc/crypttab 
+
+crypt_iscsi         UUID=2790f108-1a01-4501-abae-b633d1e89312   /etc/cryptsetup-keys.d/srv_iscsi.key            luks
+crypt_cache_iscsi   UUID=8bf542fe-a3cd-4944-97fe-39cfc49dc8d7   /etc/cryptsetup-keys.d/nvme_cache_iscsi.key     luks
+```
+
+After `daemon-reload` it should create following services
+
+```bash
+systemctl daemon-reload 
+```
+
+Generate following services
+
+```bash
+systemctl status systemd-cryptsetup@nvme_cache_iscsi.service
+systemctl status systemd-cryptsetup@srv_iscsi.service
+```
+
+Start service to check if they unlock automatically
+
+```bash
+systemctl start systemd-cryptsetup@nvme_cache_iscsi.service
+systemctl start systemd-cryptsetup@srv_iscsi.service
+```
+
+> [!IMPORTANT]
+>
+> Add hook `sd-encrypt` after `mdadm_udev` to `/etc/mkinitcpio.conf`  
+> `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
+
+### LVM
+
+```bash
+pvcreate /dev/mapper/crypt_iscsi /dev/mapper/crypt_cache_iscsi
+```
+
+```bash
+vgcreate vg_iscsi /dev/mapper/crypt_iscsi /dev/mapper/crypt_cache_iscsi
+```
+
+```bash
+lvcreate -L 449G -n lv_iscsi vg_iscsi /dev/mapper/crypt_iscsi
+```
+
+```bash
+lvcreate -L 180G -n cachedata_iscsi vg_iscsi /dev/mapper/crypt_cache_iscsi
+lvcreate -L 12G -n cachemeta_iscsi vg_iscsi /dev/mapper/crypt_cache_iscsi
+```
+
+Validate
+
+```bash
+lvs -a -o lv_name,segtype,cachemode,devices vg_iscsi
+  LV                            Type       CacheMode Devices                             
+  [cachedata_iscsi_cpool]       cache-pool writeback cachedata_iscsi_cpool_cdata(0)      
+  [cachedata_iscsi_cpool_cdata] linear               /dev/mapper/crypt_cache_iscsi(0)    
+  [cachedata_iscsi_cpool_cmeta] linear               /dev/mapper/crypt_cache_iscsi(46080)
+  lv_iscsi                      cache      writeback lv_iscsi_corig(0)                   
+  [lv_iscsi_corig]              linear               /dev/mapper/crypt_iscsi(0)          
+  [lvol0_pmspare]               linear               /dev/mapper/crypt_iscsi(114944)
+```
+
+### RAID1
+
+```bash
+mdadm --create /dev/md0 --level=1 \
+  --raid-devices=2 \
+  --metadata=1.2 \
+  --chunk=256 --bitmap=internal \
+  --name=iscsi \
+  /dev/sdf1 /dev/sdg1
+```
+
+Add the RAID map to `/etc/mdadm.conf`
+
+```bash
+mdadm --detail --scan | tee /etc/mdadm.conf
+```
+
+which should give the following results
+
+```conf
+cat /etc/mdadm.conf 
+ARRAY /dev/md0 metadata=1.2 UUID=e9ab286b:4d2232ae:fbb328ae:96b98307
+ARRAY /dev/md1 metadata=1.2 UUID=cd295687:710983a2:93d611f8:2e32e0cf
+```
+
+Check the RAID status
+
+```bash
+$ cat /proc/mdstat
+
+Personalities : [raid1] [raid4] [raid5] [raid6] 
+md1 : active raid1 sdb1[1] sda1[0]
+      488253440 blocks super 1.2 [2/2] [UU]
+      bitmap: 0/4 pages [0KB], 65536KB chunk
+
+md0 : active raid6 sde1[2] sdd1[1] sdf1[3] sdc1[0] sdg1[4]
+      11720653824 blocks super 1.2 level 6, 256k chunk, algorithm 2 [5/5] [UUUUU]
+      bitmap: 0/30 pages [0KB], 65536KB chunk
+
+unused devices: <none>
+```
+
+### BTRFS
+
+Format partition as follow
+
+```bash
+mkfs.btrfs -L iscsi /dev/vg_iscsi/lv_iscsi -f
+```
+
+Create folder for mounting
+
+```bash
+mkdir -p /srv/iscsi
+```
+
+Mount partition to make all filesystem configuration
+
+```bash
+mount /dev/vg_iscsi/lv_iscsi /srv/iscsi/
+btrfs subvolume create /srv/iscsi/@iscsi
+
+btrfs subvolume list /srv/iscsi 
+
+btrfs subvolume set-default 256 /srv/iscsi/
+```
+
+Unmount partition, because `iscsi` will be mounted as `subvolume`
+
+```bash
+unmount /srv/iscsi
+```
+
+Add entry to `/etc/fstab`
+
+```bash
+UUID=f5616810-810a-4a2c-9fdb-856b946236e4  /srv/iscsi    btrfs  subvol=@iscsi,noatime,compress=zstd,space_cache=v2,autodefrag
+```
+
+Mount all filesystems mentioned in fstab
+
+```bash
+mount -a
+```
+
+> [!TIP]
+> Sometimes is required to run `systemctl daemon-reload`
+
+Enable BTRFS quota
+
+```bash
+btrfs quota enable /srv/iscsi
+```
+
+### Service
 
 iSCSI stands for Internet Small Computer System Interface. It is a networking standard that allows the SCSI protocol (traditionally used for connecting local storage devices like hard drives) to be sent over a standard TCP/IP network.
 
@@ -2594,53 +2413,6 @@ Here is a concise breakdown of common Input/Output (I/O) methods used in storage
 
 - `rbd`- Stands for Redos Block Device. It is the native block storage format for the distributed storage system Ceph.
    Use Case: Used to provide scalable and highly available block storage for virtual machines and containers within large, distributed cloud environments.
-
-### Filesystem
-
-Format partition as follow
-
-```bash
-mkfs.btrfs -L iscsi /dev/vg_iscsi/lv_iscsi -f
-```
-
-Create folder for mounting
-
-```bash
-mkdir -p /srv/iscsi
-```
-
-Mount partition to make FS configuration
-
-```bash
-mount /dev/vg_iscsi/lv_iscsi /srv/iscsi/
-btrfs subvolume create /srv/iscsi/@iscsi
-
-btrfs subvolume list /srv/iscsi 
-
-btrfs subvolume set-default 256 /srv/iscsi/
-```
-
-> [!TIP]
-> Remember to umount partition
-
-Edit `/etc/fstab/`
-
-```bash
-UUID=f5616810-810a-4a2c-9fdb-856b946236e4  /srv/iscsi    btrfs  subvol=@iscsi,noatime,compress=zstd,space_cache=v2,autodefrag   0  0  
-```
-
-> [!TIP]
-> Use `fstabfmt -i /etc/fstab` to autoformat
-
-```bash
-mount -a
-```
-
-```bash
-btrfs quota enable /srv/iscsi
-```
-
-### Configuration
 
 Install required package
 
@@ -2743,132 +2515,264 @@ iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 -
 
 Now you can access volume, remember to format or/and create partition.
 
-## UPS
+# Maintenance
 
-## ACPI custom DSDT
+## Postfix
 
-## ZSH
-
-```bash
-yay -S ruby-colorls \
-  ttf-meslo-nerd-font-powerlevel10k \
-  zsh \
-  zsh-autosuggestions \
-  zsh-history-substring-search \
-  zsh-syntax-highlighting \
-  zsh-theme-powerlevel10k-git
-```
-
-If `ls` return following error
+Postfix is a fast, secure, open-source Mail Transfer Agent (MTA) for Unix-like systems that routes and delivers email, acting like a server's post office by handling sending, receiving, and forwarding messages across the internet, known for its efficiency and modular design as a Sendmail alternative. Check this [guide](https://wiki.archlinux.org/title/Postfix).
 
 ```bash
-❯ ls -la
-/usr/lib/ruby/3.4.0/rubygems/specification.rb:1421:in 'block in Gem::Specification#activate_dependencies': Could not find 'unicode-display_width' (>= 1.7, < 3.0) among 67 total gem(s) (Gem::MissingSpecError)
-Checked in 'GEM_PATH=/home/my_user/.local/share/gem/ruby/3.4.0:/usr/lib/ruby/gems/3.4.0' at: /usr/lib/ruby/gems/3.4.0/specifications/colorls-1.5.0.gemspec, execute `gem env` for more information
-...
+pacman -S postfix cyrus-sasl s-nail
 ```
 
-Fix it by following command
+Configuration
 
 ```bash
-gem install colorls
+# /etc/postfix/main.cf
+
+relayhost = [smtp.gmail.com]:587
+smtp_use_tls = yes
+smtp_sasl_auth_enable = yes
+smtp_sasl_password_maps = lmdb:/etc/postfix/sasl_passwd
+smtp_sasl_security_options = noanonymous
+smtp_sasl_tls_security_options = noanonymous
 ```
 
-<img src="assets/zsh_ls.png" alt="drawing" width="800"/>
+Password
 
-### Plugins
+```bash
+# /etc/postfix/sasl_passwd 
 
-- [zsh-fzf-history-search](https://github.com/joshskidmore/zsh-fzf-history-search)
+[smtp.gmail.com]:587    <user>@gmail.com:<password>
+```
 
-  A simple zsh plugin to replace Ctrl-r with an fzf-driven, searchable list of history.
+Encryption map
 
-  ```bash
-  yay -S zsh-fzf-plugin-git
-  ```
+```bash
+# /etc/postfix/tls_policy
 
-  Edit `.zshrc`
+[smtp.gmail.com]:587 encrypt
+```
 
-  ```diff
-  +source /usr/share/zsh/plugins/zsh-fzf-plugin/fzf.plugin.zsh
-  ```
+```bash
+chmod 600 /etc/postfix/sasl_passwd
+postmap /etc/postfix/sasl_passwd
+postmap /etc/postfix/tls_policy
+```
 
-- [zsh-autosuggestions.zsh](https://github.com/zsh-users/zsh-autosuggestions)
+Restart service and check the status
 
-  It suggests commands as you type based on history and completions.
+```bash
+systemctl restart postfix.service
+systemctl enable postfix.service
+```
 
-  ```bash
-  yay -S zsh-autosuggestions
-  ```
+Test mail
 
-  Edit `.zshrc`
+```bash
+echo "This is the body of an encrypted email" | mail -s "This is the subject line" mygmaildest@gmail.com
+```
 
-  ```diff
-  +source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
-  ```
+## LVM
 
-- [fzf-marks](https://github.com/urbainvaes/fzf-marks)
+Check cache usage for `vg_files`
 
-  This plugin can be used to create, delete, and navigate marks in bash and zsh.
+```bash
+lvs -a -o lv_name,lv_attr,chunksize vg_files
+  LV                              Attr       Chunk  
+  [cachedata_media_cpool]         Cwi---C--- 512.00k
+  [cachedata_media_cpool_cdata]   Cwi-ao----      0 
+  [cachedata_media_cpool_cmeta]   ewi-ao----      0 
+  [cachedata_private_cpool]       Cwi---C--- 512.00k
+  [cachedata_private_cpool_cdata] Cwi-ao----      0 
+  [cachedata_private_cpool_cmeta] ewi-ao----      0 
+  lv_media                        Cwi-aoC--- 512.00k
+  [lv_media_corig]                owi-aoC---      0 
+  lv_private                      Cwi-aoC--- 512.00k
+  [lv_private_corig]              owi-aoC---      0 
+  [lvol0_pmspare]                 ewi-------      0 
+```
 
-  ```bash
-  yay -S fzf-marks-git
-  ```
+```bash
+lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_files
+  LV         CacheMode    CachePolicy CacheTotalBlocks CacheUsedBlocks 
+  lv_media   writethrough smq                   614400            13916
+  lv_private writethrough smq                   614400                0
+```
 
-  Edit `.zshrc`
+Result: 6.8 GiB (13 916 × 512 KiB ≈ 6.8 GiB)
 
-  ```diff
-  +source /usr/share/fzf-marks/fzf-marks.zsh
-  ```
+Check cache usage for `vg_iscsi`
 
-- [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting)
+```bash
+lvs -a -o lv_name,lv_attr,chunksize vg_iscsi
+  LV                            Attr       Chunk  
+  [cachedata_iscsi_cpool]       Cwi---C--- 256.00k
+  [cachedata_iscsi_cpool_cdata] Cwi-ao----      0 
+  [cachedata_iscsi_cpool_cmeta] ewi-ao----      0 
+  lv_iscsi                      Cwi-aoC--- 256.00k
+  [lv_iscsi_corig]              owi-aoC---      0 
+  [lvol0_pmspare]               ewi-------      0 
+```
 
-  This package provides syntax highlighting for the shell zsh. It enables highlighting of commands whilst they are typed at a zsh prompt into an interactive terminal. 
+```bash
+lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_iscsi
+  LV       CacheMode CachePolicy CacheTotalBlocks CacheUsedBlocks 
+  lv_iscsi writeback smq                   737280            14744
+```
 
-  ```bash
-  yay -S zsh-syntax-highlighting
-  ```
+Result: 3.6 GiB (14 744 × 256 KiB ≈ 3.6 GiB)
 
-  Edit `.zshrc`
+### Troubleshooting
 
-  ```diff
-  +source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
-  ```
+#### vgcreate - `inconsistent logical block sizes`
 
-- [zsh-theme-powerlevel10k-git](https://github.com/romkatv/powerlevel10k)
+Problem is different block size.
 
-  Powerlevel10k is a theme for Zsh. It emphasizes speed, flexibility and out-of-the-box experience. Powerlevel10k.
+```bash
+lsblk -o NAME,TYPE,LOG-SEC,PHY-SEC,MIN-IO,OPT-IO  /dev/mapper/crypt_files /dev/mapper/crypt_cache_files
 
-  ```bash
-  yay -S https://github.com/romkatv/powerlevel10k
-  ```
+NAME                 TYPE  LOG-SEC PHY-SEC MIN-IO OPT-IO
+crypt_files          crypt    4096    4096   4096      0
+crypt_cache_files    crypt     512     512    512      0
+```
 
-  ```diff
-  +source /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme
-  ```
+> [!WARNING]
+> Check this [guide](#checklist-before-partitioning) how to change the block size
 
-  Configure powerlevel
+### Useful command
 
-  ```bash
-  p10k configure
-  ```
+Check available space to create another LV
 
-- [zsh-history-substring-search](https://github.com/zsh-users/zsh-history-substring-search)
+```bash
+vgs
+  VG       #PV #LV #SN Attr    VSize    VFree  
+  vg_files   2   2   0 wz--n--   11.55t  13.98g
+  vg_iscsi   2   1   0 wz--n-- <665.60g <12.60g
+  vg_root    1   1   0 wz--n--  464.74g 214.74g
+```
 
-  This is a clean-room implementation of the Fish shell's history search feature, where you can type in any part of any command from history and then press chosen keys, such as the UP and DOWN arrows, to cycle through matches.
+Check cache with ZSH function
 
-  ```bash
-  pacman -S zsh-history-substring-search
-  ```
+```bash
+cache_usage(){
+lvs -o lv_name,chunksize,cache_total_blocks,cache_used_blocks --noheadings vg_files | awk '{cs=$2; gsub(/k/,"",cs); used=$4*cs/1024/1024; tot=$3*cs/1024/1024; printf "%s: %.2f/%.2f GiB (%.2f%%)\n",$1,used,tot,(used/tot)*100}'
 
-  ```diff
-  +source /usr/share/zsh/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
-  ```
+lvs -o lv_name,chunksize,cache_total_blocks,cache_used_blocks --noheadings vg_iscsi | awk '{cs=$2; gsub(/k/,"",cs); used=$4*cs/1024/1024; tot=$3*cs/1024/1024; printf "%s: %.2f/%.2f GiB (%.2f%%)\n",$1,used,tot,(used/tot)*100}'
+}
+```
 
-## Maintenance
+```bash
+cache_usage                                                                            
+lv_media: 300.00/300.00 GiB (100.00%)
+lv_private: 5.35/300.00 GiB (1.78%)
+lv_iscsi: 3.60/180.00 GiB (2.00%)
+```
 
-### BTRFS
+## RAID
 
-#### Chunks
+Modify kernel parameters
+
+```bash
+# /etc/udev/rules.d/99-md-raid.rules
+
+ACTION=="add|change", KERNEL=="md0", ATTR{md/stripe_cache_size}="8192"
+ACTION=="add|change", KERNEL=="md0", RUN+="/sbin/blockdev --setra 4096 /dev/md0"
+ACTION=="add|change", KERNEL=="md1", RUN+="/sbin/blockdev --setra 16384 /dev/md1"
+```
+
+- `RAID6` (MD0) benefits from a larger stripe cache to mitigate parity overhead and from a moderate readahead that aligns with full-stripe multiples, improving both normal sequential I/O and rebuild/check operations.
+
+- `RAID1` (MD1) doesn’t use stripe parity; therefore the stripe cache isn’t applicable. It does benefit from an even larger readahead when the expected workload is heavy, sequential reads—hence 8 MiB to maximize streaming performance.
+
+Enable regular mdadm scanner
+
+```bash
+systemctl enable mdcheck_start.timer
+systemctl enable mdcheck_continue.timer
+systemctl enable mdmonitor-oneshot.timer
+
+systemctl start mdcheck_start.timer
+systemctl start mdcheck_continue.timer
+systemctl start mdmonitor-oneshot.timer
+```
+
+### Mail notification
+
+In order to send emails, a properly configured mail transfer agent is required [check Postfix section](#postfix)
+
+```conf
+MAILADDR user@domain
+```
+
+Verify that everything is working as it should, run the following command
+
+```bash
+mdadm --monitor --scan --oneshot --test
+```
+
+```bash
+mdadm --detail /dev/md0
+
+/dev/md0:
+           Version : 1.2
+     Creation Time : Fri Nov  7 19:17:06 2025
+        Raid Level : raid6
+        Array Size : 11720653824 (10.92 TiB 12.00 TB)
+     Used Dev Size : 3906884608 (3.64 TiB 4.00 TB)
+      Raid Devices : 5
+     Total Devices : 5
+       Persistence : Superblock is persistent
+
+     Intent Bitmap : Internal
+
+       Update Time : Wed Nov 12 23:17:02 2025
+             State : clean 
+    Active Devices : 5
+   Working Devices : 5
+    Failed Devices : 0
+     Spare Devices : 0
+
+            Layout : left-symmetric
+        Chunk Size : 256K
+
+Consistency Policy : bitmap
+
+              Name : qnap:0  (local to host qnap)
+              UUID : e9ab286b:4d2232ae:fbb328ae:96b98307
+            Events : 11474
+
+    Number   Major   Minor   RaidDevice State
+       0       8       33        0      active sync   /dev/sdc1
+       1       8       49        1      active sync   /dev/sdd1
+       2       8       65        2      active sync   /dev/sde1
+       3       8       81        3      active sync   /dev/sdf1
+       4       8       97        4      active sync   /dev/sdg1
+```
+
+> [!IMPORTANT]
+>
+> Add hook `mdadm_udev` after `block` to `/etc/mkinitcpio.conf`  
+> `... block mdadm_udev sd-encrypt lvm2 btrfs filesystems fsck`
+>
+> In case you want to have access to RAID in early boot
+> `MODULES=(md_mod raid6_pq raid1)`
+
+### Change the `md127` name
+
+If the array already exists, it will be automatically created with invalid names. To fix this, follow these steps.
+
+```bash
+mdadm --stop /dev/md127
+```
+
+```bash
+mdadm --assemble --update=name --name=iscsi /dev/md1 /dev/sda1 /dev/sdb1
+```
+
+## BTRFS
+
+### Chunks
 
 Install `btrfs-heatmap` application
 
@@ -2898,7 +2802,7 @@ With such a large storage space of around `6TB`, it's not the best way to show t
 
 <img src="assets/after_re-allocation.png" alt="drawing" width="800"/>
 
-#### Scrub
+### Scrub
 
 [Scrub](https://btrfs.readthedocs.io/en/latest/Scrub.html) is a process that validates all file system data and metadata, detecting data checksum errors, basic superblock errors, basic metadata block header errors, and disk read errors.
 
@@ -2978,24 +2882,412 @@ Wed 2026-01-07 01:11:42 CET 1 month 0 days -                                   -
 Wed 2026-01-07 16:30:31 CET 1 month 0 days -                                   - btrfs-scrub@srv-iscsi.timer      btrfs-scrub@srv-iscsi.service
 ```
 
+## Samba
 
+### Useful command
 
+Show processes
 
+```bash
+smbstatus -p
 
-extra/vim-supertab
+Samba version 4.23.3
+PID     Username     Group        Machine                                   Protocol Version  Encryption           Signing              
+----------------------------------------------------------------------------------------------------------------------------------------
+2677    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51942)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2674    my_user      users        10.0.12.30 (ipv4:10.0.12.30:38898)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2669    my_user      users        10.0.12.30 (ipv4:10.0.12.30:48760)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2679    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51962)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2701    my_user      users        10.0.12.30 (ipv4:10.0.12.30:49328)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2697    my_user      users        10.0.12.30 (ipv4:10.0.12.30:42660)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2660    my_user      users        10.0.12.30 (ipv4:10.0.12.30:48720)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2678    my_user      users        10.0.12.30 (ipv4:10.0.12.30:51958)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+2699    my_user      users        10.0.12.30 (ipv4:10.0.12.30:42054)        SMB3_11           AES-128-GCM          partial(AES-128-GMAC)
+```
 
+```bash
+smbstatus -S
 
-extra/zsh-autocomplete
+Service      pid     Machine       Connected at                     Encryption   Signing     
+---------------------------------------------------------------------------------------------
+private      2660    10.0.12.30    Wed Nov 26 17:17:38 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2678    10.0.12.30    Wed Nov 26 17:17:56 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2701    10.0.12.30    Wed Nov 26 17:21:25 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2677    10.0.12.30    Wed Nov 26 17:17:54 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2679    10.0.12.30    Wed Nov 26 17:17:57 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2674    10.0.12.30    Wed Nov 26 17:17:46 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2699    10.0.12.30    Wed Nov 26 17:21:05 2025 CET     AES-128-GCM  AES-128-GMAC
+media        2669    10.0.12.30    Wed Nov 26 17:17:40 2025 CET     AES-128-GCM  AES-128-GMAC
+private      2697    10.0.12.30    Wed Nov 26 17:21:00 2025 CET     AES-128-GCM  AES-128-GMAC
+```
 
-zsh-completions-0.35.0-3
-systemd-oomd.service
- blk-availability.service
+## S.M.A.R.T.
 
-smartd.service
+S.M.A.R.T. (Self-Monitoring, Analysis, and Reporting Technology) is a supplementary component built into many modern storage devices through which devices monitor, store, and analyze the health of their operation. Check this [guide](https://wiki.archlinux.org/title/S.M.A.R.T.).
 
-btrfs-scrub@.timer
+```bash
+pacman -S smartmontools 
+```
 
-mdadm-last-resort@.timer                     static          -       
-mdcheck_continue.timer                       disabled        disabled
-mdcheck_start.timer                          disabled        disabled
-mdmonitor-oneshot.timer                      disabled        disabled
+```bash
+$ update-smart-drivedb
+
+/usr/share/smartmontools/drivedb.h 7.5/5706 updated to 7.5/6028
+```
+
+```diff
+# /etc/smartd.conf
+
+DEVICESCAN -n standby -s (S/../.././02|L/../../7/03) -a -m my_user@gmail.com
+```
+
+Enable daemon
+
+```bash
+systemctl enable smartd.service 
+systemctl start smartd.service 
+```
+
+## Disk power managed - hdparm
+
+Create two services, which start on boot.
+
+```bash
+# /etc/systemd/system/hdparm-raid5.service
+
+[Unit]
+Description=Set the sleep time for the RAID5
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hdparm -q -S 120 /dev/sdc /dev/sdd /dev/sde /dev/sdf /dev/sdg
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# /etc/systemd/system/hdparm-raid1.service
+
+[Unit]
+Description=Set the sleep time for the RAID1
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/hdparm -q -S 120 /dev/sda /dev/sdb
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable hdparm-raid5.service
+systemctl enable hdparm-raid1.service
+
+systemctl start hdparm-raid5.service
+systemctl start hdparm-raid1.service
+```
+
+Check if disk are sleep after 10 minutes
+
+```bash
+check_disk_pm(){
+  for d in /dev/sd[a-g]; do
+     printf "%s: " "$d"; sudo hdparm -C "$d" 2>/dev/null | awk '/state/ {print $4}'
+  done
+}
+```
+
+```bash
+ check_disk_pm                                                                                                                                                           ✔  ⚡  55  17:51:12 
+/dev/sda: standby
+/dev/sdb: standby
+/dev/sdc: standby
+/dev/sdd: standby
+/dev/sde: standby
+/dev/sdf: standby
+/dev/sdg: standby
+```
+
+## Snapshots - snapper
+
+Create snapper config
+
+```bash
+snapper -c private create-config /srv/private
+snapper -c media create-config /srv/media
+```
+
+Modify the configuration (`/etc/snapper/configs`) to get the following results
+
+```bash
+$ snapper -c media get-config
+
+Key                      │ Value
+─────────────────────────┼────────────
+ALLOW_GROUPS             │
+ALLOW_USERS              │ my_user
+BACKGROUND_COMPARISON    │ no
+EMPTY_PRE_POST_CLEANUP   │ yes
+EMPTY_PRE_POST_MIN_AGE   │ 3600
+FREE_LIMIT               │ 0.15
+FSTYPE                   │ btrfs
+NUMBER_CLEANUP           │ yes
+NUMBER_LIMIT             │ 20
+NUMBER_LIMIT_IMPORTANT   │ 10
+NUMBER_MIN_AGE           │ 3600
+QGROUP                   │
+SPACE_LIMIT              │ 0.15
+SUBVOLUME                │ /srv/media
+SYNC_ACL                 │ yes
+TIMELINE_CLEANUP         │ yes
+TIMELINE_CREATE          │ yes
+TIMELINE_LIMIT_DAILY     │ 7
+TIMELINE_LIMIT_HOURLY    │ 0
+TIMELINE_LIMIT_MONTHLY   │ 12
+TIMELINE_LIMIT_QUARTERLY │ 0
+TIMELINE_LIMIT_WEEKLY    │ 4
+TIMELINE_LIMIT_YEARLY    │ 3
+TIMELINE_MIN_AGE         │ 3600
+```
+
+The most important:
+
+- `SPACE_LIMIT="0.15"` - snapshots can take only 15% of space
+- `FREE_LIMIT="0.15"` - always keep 15% of free space
+- `TIMELINE_LIMIT_HOURLY="0"` - do not create hourly snapshot
+- `NUMBER_LIMIT="20"` - limit the number of snapshots
+- `BACKGROUND_COMPARISON="no"` - disabling CPU-consuming background comparison
+- `ALLOW_USERS="my_admin"` - give the `my_user` user the ability to manage the snapshot
+- `SYNC_ACL="yes"` - pass permissions of user `my_user` to snapshot
+
+Enable auto timeline snapshots and cleanup process.
+
+```bash
+systemctl enable snapper-cleanup.timer
+systemctl enable snapper-timeline.timer
+
+systemctl start snapper-cleanup.timer
+systemctl start snapper-timeline.timer
+```
+
+Check timers
+
+```bash
+$ systemctl list-timers 
+
+NEXT                            LEFT LAST                              PASSED UNIT                             ACTIVATES                         
+Sun 2025-11-30 23:00:00 CET    36min Sun 2025-11-30 22:00:05 CET    23min ago snapper-timeline.timer           snapper-timeline.service
+Sun 2025-11-30 23:21:28 CET    57min Sun 2025-11-30 22:21:28 CET 2min 17s ago snapper-cleanup.timer            snapper-cleanup.service
+Mon 2025-12-01 00:00:00 CET 1h 36min Sun 2025-11-30 00:00:02 CET      22h ago shadow.timer                     shadow.service
+Mon 2025-12-01 17:29:20 CET      19h Sun 2025-11-30 17:29:20 CET 4h 54min ago systemd-tmpfiles-clean.timer     systemd-tmpfiles-clean.service
+Wed 2025-12-03 02:40:33 CET   2 days Mon 2025-11-24 09:49:13 CET            - archlinux-keyring-wkd-sync.timer archlinux-keyring-wkd-sync.service
+```
+
+### Useful command
+
+Command `du` can provide incorrect space usage because of the snapshots implementation
+
+```bash
+$ du -hd1 /srv/media
+
+61G     /srv/media/.snapshots
+5.1G    /srv/media/video
+0       /srv/media/music
+117M    /srv/media/photos
+66G     /srv/media
+```
+
+Check the real space used
+
+```bash
+btrfs filesystem du -s /srv/media
+     Total   Exclusive  Set shared  Filename
+  65.36GiB       0.00B     5.17GiB  /srv/media
+```
+
+Show subvolume status
+
+```bash
+btrfs subvolume show /srv/media/
+@media
+        Name:                   @media
+        UUID:                   bf0a0790-d875-a74b-84ff-d55808da366e
+        Parent UUID:            -
+        Received UUID:          -
+        Creation time:          2025-11-24 08:31:27 +0100
+        Subvolume ID:           256
+        Generation:             106
+        Gen at creation:        10
+        Parent ID:              5
+        Top level ID:           5
+        Flags:                  -
+        Send transid:           0
+        Send time:              2025-11-24 08:31:27 +0100
+        Receive transid:        0
+        Receive time:           -
+        Snapshot(s):
+                                @media/.snapshots/1/snapshot
+                                @media/.snapshots/2/snapshot
+                                @media/.snapshots/3/snapshot
+                                @media/.snapshots/4/snapshot
+                                @media/.snapshots/5/snapshot
+                                @media/.snapshots/6/snapshot
+                                @media/.snapshots/7/snapshot
+                                @media/.snapshots/8/snapshot
+        Quota group:            0/256
+          Limit referenced:     -
+          Limit exclusive:      -
+          Usage referenced:     5.17GiB
+          Usage exclusive:      16.00KiB
+```
+
+## UPS
+
+TODO: add description
+
+## ACPI custom DSDT
+
+TODO: add description
+
+## SSD TRIM
+
+TODO: add description
+
+# Extra
+
+## ZSH
+
+<img src="assets/zsh_ls.png" alt="drawing" width="800"/>
+
+```bash
+yay -S ruby-colorls \
+  ttf-meslo-nerd-font-powerlevel10k \
+  zsh \
+  zsh-autosuggestions \
+  zsh-history-substring-search \
+  zsh-syntax-highlighting \
+  zsh-theme-powerlevel10k-git
+```
+
+If `ls` return following error
+
+```bash
+❯ ls -la
+/usr/lib/ruby/3.4.0/rubygems/specification.rb:1421:in 'block in Gem::Specification#activate_dependencies': Could not find 'unicode-display_width' (>= 1.7, < 3.0) among 67 total gem(s) (Gem::MissingSpecError)
+Checked in 'GEM_PATH=/home/my_user/.local/share/gem/ruby/3.4.0:/usr/lib/ruby/gems/3.4.0' at: /usr/lib/ruby/gems/3.4.0/specifications/colorls-1.5.0.gemspec, execute `gem env` for more information
+...
+```
+
+Fix it by following command
+
+```bash
+gem install colorls
+```
+
+### Plugins
+
+- [zsh-fzf-history-search](https://github.com/joshskidmore/zsh-fzf-history-search)
+
+  A simple zsh plugin to replace Ctrl-r with an fzf-driven, searchable list of history.
+
+  ```bash
+  yay -S zsh-fzf-plugin-git
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-fzf-plugin/fzf.plugin.zsh
+  ```
+
+- [zsh-autosuggestions.zsh](https://github.com/zsh-users/zsh-autosuggestions)
+
+  It suggests commands as you type based on history and completions.
+
+  ```bash
+  yay -S zsh-autosuggestions
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+  ```
+
+- [fzf-marks](https://github.com/urbainvaes/fzf-marks)
+
+  This plugin can be used to create, delete, and navigate marks in bash and zsh.
+
+  ```bash
+  yay -S fzf-marks-git
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/fzf-marks/fzf-marks.zsh
+  ```
+
+- [zsh-syntax-highlighting](https://github.com/zsh-users/zsh-syntax-highlighting)
+
+  This package provides syntax highlighting for the shell zsh. It enables highlighting of commands whilst they are typed at a zsh prompt into an interactive terminal.
+
+  ```bash
+  yay -S zsh-syntax-highlighting
+  ```
+
+  Edit `.zshrc`
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+  ```
+
+- [zsh-theme-powerlevel10k-git](https://github.com/romkatv/powerlevel10k)
+
+  Powerlevel10k is a theme for Zsh. It emphasizes speed, flexibility and out-of-the-box experience. Powerlevel10k.
+
+  ```bash
+  yay -S https://github.com/romkatv/powerlevel10k
+  ```
+
+  ```diff
+  +source /usr/share/zsh-theme-powerlevel10k/powerlevel10k.zsh-theme
+  ```
+
+  Configure powerlevel
+
+  ```bash
+  p10k configure
+  ```
+
+- [zsh-history-substring-search](https://github.com/zsh-users/zsh-history-substring-search)
+
+  This is a clean-room implementation of the Fish shell's history search feature, where you can type in any part of any command from history and then press chosen keys, such as the UP and DOWN arrows, to cycle through matches.
+
+  ```bash
+  pacman -S zsh-history-substring-search
+  ```
+
+  ```diff
+  +source /usr/share/zsh/plugins/zsh-history-substring-search/zsh-history-substring-search.zsh
+  ```
+
+## mDNS scanner
+
+A good tool to validate if mDNS or DNS-SD is working correctly. Check this [project](https://github.com/CramBL/mdns-scanner).
+
+```bash
+yay -S mdns-scanner
+```
+
+## fstab
+
+`fstab` can be nicely formatted by installing [fstabfmt](https://github.com/xyproto/fstabfmt) from [AUR](https://aur.archlinux.org/packages/fstabfmt)
+
+```bash
+fstabfmt -i /etc/fstab
+```

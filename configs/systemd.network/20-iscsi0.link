@@ -1,0 +1,10 @@
+[Match]
+Type=ether
+MACAddress=24:5e:be:80:31:6a
+
+[Link]
+Name=iscsi0
+MACAddressPolicy=persistent
+AutoNegotiationFlowControl=yes
+RxFlowControl=yes
+TxFlowControl=yes
