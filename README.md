@@ -1,4 +1,4 @@
-![work in progress](https://cdn-icons-png.flaticon.com/512/5578/5578703.png)
+<img src="assets/nas_from_scratch_gemini.png" alt="drawing" width="800"/>
 
 # Qnap TS-h973AX - NAS server from scratch
 
@@ -99,8 +99,8 @@
   - [Disk power managed - hdparm](#disk-power-managed---hdparm)
   - [Snapshots - snapper](#snapshots---snapper)
     - [Useful command](#useful-command-3)
-  - [UPS](#ups)
-  - [ACPI custom DSDT](#acpi-custom-dsdt)
+  - [UPS - in progress](#ups---in-progress)
+  - [ACPI custom DSDT - in progress](#acpi-custom-dsdt---in-progress)
   - [SSD TRIM](#ssd-trim)
 - [Extra](#extra)
   - [ZSH](#zsh)
@@ -2798,6 +2798,14 @@ $ btrfs balance start -d /srv/media
 Done, had to relocate 345 out of 347 chunks
 ```
 
+Check the progress
+
+```bash
+btrfs balance status /srv/media
+
+112 out of about 347 chunks balanced (113 considered),  32% left
+```
+
 With such a large storage space of around `6TB`, it's not the best way to show the differences, but you can still see some differences.
 
 <img src="assets/after_re-allocation.png" alt="drawing" width="800"/>
@@ -3145,17 +3153,106 @@ btrfs subvolume show /srv/media/
           Usage exclusive:      16.00KiB
 ```
 
-## UPS
+## UPS - in progress
 
 TODO: add description
 
-## ACPI custom DSDT
+## ACPI custom DSDT - in progress
 
 TODO: add description
 
 ## SSD TRIM
 
-TODO: add description
+All layers must have `DISC-MAX` > 0, otherwise trim will not work. Check this [guide](https://wiki.archlinux.org/title/Solid_state_drive) to understand how it works.
+
+In following  configuration, the following layers can be distinguished:
+
+- BTRFS - by default, enable discarding of freed file blocks, but behavior can be modified by [mount options](https://btrfs.readthedocs.io/en/latest/ch-mount-options.html).
+- LVM - it should work out of the box, but if you experience problems, you may need to add `issue_discards = 1` to `/etc/lvm/lvm.conf`
+- dm-crypt - required to add `discard` to `/etc/crypttab` and/or `/etc/crypttab.initramfs `
+
+```bash
+$ lsblk -D
+
+NAME                                         DISC-ALN DISC-GRAN DISC-MAX DISC-ZERO
+nvme0n1                                             0      512B       2T         0
+├─nvme0n1p1                                         0      512B       2T         0
+└─nvme0n1p2                                         0      512B       2T         0
+  └─luks_root                                       0        0B       0B         0
+    ├─vg_root-lv_root                               0        0B       0B         0
+    └─vg_root-lv_temp                               0        0B       0B         0
+```
+
+After proper configuration discard working through all layers
+
+```bash
+nvme1n1                                             0        4K       2T         0
+├─nvme1n1p1                                         0        4K       2T         0
+│ └─crypt_cache_files                               0        0B       0B         0
+│   ├─vg_files-cachedata_media_cpool_cdata          0        0B       0B         0
+│   │ └─vg_files-lv_media                           0      512M     512G         0
+│   ├─vg_files-cachedata_media_cpool_cmeta          0        0B       0B         0
+│   │ └─vg_files-lv_media                           0      512M     512G         0
+│   ├─vg_files-cachedata_private_cpool_cdata        0        0B       0B         0
+│   │ └─vg_files-lv_private                         0      512M     512G         0
+│   └─vg_files-cachedata_private_cpool_cmeta        0        0B       0B         0
+│     └─vg_files-lv_private                         0      512M     512G         0
+└─nvme1n1p2                                         0        4K       2T         0
+  └─crypt_cache_iscsi                               0        0B       0B         0
+    ├─vg_iscsi-cachedata_iscsi_cpool_cdata          0        0B       0B         0
+    │ └─vg_iscsi-lv_iscsi                           0       32M      32G         0
+    └─vg_iscsi-cachedata_iscsi_cpool_cmeta          0        0B       0B         0
+      └─vg_iscsi-lv_iscsi                           0       32M      32G         0
+nvme0n1                                             0      512B       2T         0
+├─nvme0n1p1                                         0      512B       2T         0
+└─nvme0n1p2                                         0      512B       2T         0
+  └─luks_root                                       0        0B       0B         0
+    ├─vg_root-lv_root                               0        0B       0B         0
+    └─vg_root-lv_temp                               0        0B       0B         0
+```
+
+```diff
+nvme1n1                                             0        4K       2T         0
+ ├─nvme1n1p1                                        0        4K       2T         0
++│ └─crypt_cache_files                              0        4K       2T         0
++│   ├─vg_files-cachedata_media_cpool_cdata         0        4K       2T         0
+ │   │ └─vg_files-lv_media                          0      512M     512G         0
++│   ├─vg_files-cachedata_media_cpool_cmeta         0        4K       2T         0
+ │   │ └─vg_files-lv_media                          0      512M     512G         0
++│   ├─vg_files-cachedata_private_cpool_cdata       0        4K       2T         0
+ │   │ └─vg_files-lv_private                        0      512M     512G         0
++│   └─vg_files-cachedata_private_cpool_cmeta       0        4K       2T         0
+ │     └─vg_files-lv_private                        0      512M     512G         0
+ └─nvme1n1p2                                        0        4K       2T         0
++ └─crypt_cache_iscsi                               0        4K       2T         0
++   ├─vg_iscsi-cachedata_iscsi_cpool_cdata          0        4K       2T         0
+    │ └─vg_iscsi-lv_iscsi                           0       32M      32G         0
++   └─vg_iscsi-cachedata_iscsi_cpool_cmeta          0        4K       2T         0
+      └─vg_iscsi-lv_iscsi                           0       32M      32G         0
+nvme0n1                                             0      512B       2T         0
+├─nvme0n1p1                                         0      512B       2T         0
+└─nvme0n1p2                                         0      512B       2T         0
++ └─luks_root                                       0      512B       2T         0
++   ├─vg_root-lv_root                               0      512B       2T         0
++   └─vg_root-lv_temp                               0      512B       2T         0
+```
+
+Enable timer
+
+```bash
+systemctl enable fstrim.timer
+systemctl start fstrim.timer
+```
+
+Logs
+
+```log
+Dec 14 00:21:06 qnap fstrim[2850]: /srv/iscsi: 431.5 GiB (463311949824 bytes) trimmed on /dev/mapper/vg_iscsi-lv_iscsi
+Dec 14 00:21:06 qnap fstrim[2850]: /srv/media: 5.5 TiB (6067567001600 bytes) trimmed on /dev/mapper/vg_files-lv_media
+Dec 14 00:21:06 qnap fstrim[2850]: /srv/private: 4.8 TiB (5324030947328 bytes) trimmed on /dev/mapper/vg_files-lv_private
+Dec 14 00:21:06 qnap fstrim[2850]: /boot: 978.9 MiB (1026486272 bytes) trimmed on /dev/nvme0n1p1
+Dec 14 00:21:06 qnap fstrim[2850]: /: 241 GiB (258813665280 bytes) trimmed on /dev/mapper/vg_root-lv_root
+```
 
 # Extra
 
