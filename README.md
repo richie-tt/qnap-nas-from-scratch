@@ -2815,7 +2815,7 @@ With such a large storage space of around `6TB`, it's not the best way to show t
 [Scrub](https://btrfs.readthedocs.io/en/latest/Scrub.html) is a process that validates all file system data and metadata, detecting data checksum errors, basic superblock errors, basic metadata block header errors, and disk read errors.
 
 ```bash
-$ btrfs scrub start /srv//media/
+$ btrfs scrub start /srv/media/
 
 scrub started on /srv//media/, fsid ac6d1083-f1cb-4e20-aadc-f0850f1f4381 (pid=54771)
 Starting scrub on devid 1
@@ -3102,25 +3102,27 @@ Command `du` can provide incorrect space usage because of the snapshots implemen
 ```bash
 $ du -hd1 /srv/media
 
-61G     /srv/media/.snapshots
-5.1G    /srv/media/video
-0       /srv/media/music
-117M    /srv/media/photos
-66G     /srv/media
+15T     /srv/media/.snapshots
+378G    /srv/media/video
+64M     /srv/media/music
+44G     /srv/media/photos
+15T     /srv/media/
 ```
 
-Check the real space used
+Check the actual space, where it really is `491.19GiB`
 
 ```bash
-btrfs filesystem du -s /srv/media
+$ btrfs filesystem du -s /srv/media
+
      Total   Exclusive  Set shared  Filename
-  65.36GiB       0.00B     5.17GiB  /srv/media
+  14.53TiB       0.00B   491.19GiB  /srv/media
 ```
 
 Show subvolume status
 
 ```bash
-btrfs subvolume show /srv/media/
+$ btrfs subvolume show /srv/media/
+
 @media
         Name:                   @media
         UUID:                   bf0a0790-d875-a74b-84ff-d55808da366e
@@ -3128,7 +3130,7 @@ btrfs subvolume show /srv/media/
         Received UUID:          -
         Creation time:          2025-11-24 08:31:27 +0100
         Subvolume ID:           256
-        Generation:             106
+        Generation:             8718
         Gen at creation:        10
         Parent ID:              5
         Top level ID:           5
@@ -3139,18 +3141,49 @@ btrfs subvolume show /srv/media/
         Receive time:           -
         Snapshot(s):
                                 @media/.snapshots/1/snapshot
-                                @media/.snapshots/2/snapshot
-                                @media/.snapshots/3/snapshot
-                                @media/.snapshots/4/snapshot
-                                @media/.snapshots/5/snapshot
-                                @media/.snapshots/6/snapshot
-                                @media/.snapshots/7/snapshot
-                                @media/.snapshots/8/snapshot
+                                @media/.snapshots/91/snapshot
+                                @media/.snapshots/123/snapshot
+                                @media/.snapshots/124/snapshot
+                                @media/.snapshots/125/snapshot
+                                @media/.snapshots/149/snapshot
+                                @media/.snapshots/152/snapshot
+                                @media/.snapshots/153/snapshot
+                                @media/.snapshots/168/snapshot
+                                @media/.snapshots/192/snapshot
+                                @media/.snapshots/216/snapshot
+                                @media/.snapshots/240/snapshot
+                                @media/.snapshots/264/snapshot
+                                @media/.snapshots/288/snapshot
+                                @media/.snapshots/310/snapshot
+                                @media/.snapshots/311/snapshot
+                                @media/.snapshots/312/snapshot
+                                @media/.snapshots/313/snapshot
+                                @media/.snapshots/314/snapshot
+                                @media/.snapshots/315/snapshot
+                                @media/.snapshots/316/snapshot
+                                @media/.snapshots/317/snapshot
+                                @media/.snapshots/318/snapshot
+                                @media/.snapshots/319/snapshot
+                                @media/.snapshots/320/snapshot
+                                @media/.snapshots/321/snapshot
+                                @media/.snapshots/322/snapshot
+                                @media/.snapshots/323/snapshot
+                                @media/.snapshots/324/snapshot
+                                @media/.snapshots/325/snapshot
+                                @media/.snapshots/326/snapshot
+                                @media/.snapshots/327/snapshot
+                                @media/.snapshots/328/snapshot
+                                @media/.snapshots/329/snapshot
+                                @media/.snapshots/330/snapshot
+                                @media/.snapshots/331/snapshot
+                                @media/.snapshots/332/snapshot
+                                @media/.snapshots/333/snapshot
         Quota group:            0/256
           Limit referenced:     -
           Limit exclusive:      -
-          Usage referenced:     5.17GiB
+          Usage referenced:     420.05GiB
           Usage exclusive:      16.00KiB
+
 ```
 
 ## UPS - in progress
