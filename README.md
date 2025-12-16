@@ -114,6 +114,8 @@
 
 The QNAP [TS-h973AX](https://www.qnap.com/en/product/ts-h973ax) is a 9-bay NAS server in a compact tower design.
 
+<img src="assets/qnap.jpg" alt="drawing" width="800"/>
+
 Specification:
 
 - CPU - AMD Ryzen™ Embedded V1500B 2.2 GHz 2 (8 treads)
