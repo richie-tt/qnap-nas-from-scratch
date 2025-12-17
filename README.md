@@ -107,6 +107,8 @@
     - [Plugins](#plugins)
   - [mDNS scanner](#mdns-scanner)
   - [fstab](#fstab)
+  - [ISCSI](#iscsi-1)
+    - [Login](#login-1)
 
 # Board
 
@@ -2497,7 +2499,7 @@ Configuration saved to /etc/target/saveconfig.json
 
 #### Login
 
-```bash
+<!-- ```bash
 iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --login
 ```
 
@@ -2515,7 +2517,7 @@ iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 -
 iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.password -v my_pass
 ```
 
-Now you can access volume, remember to format or/and create partition.
+Now you can access volume, remember to format or/and create partition. -->
 
 # Maintenance
 
@@ -2580,7 +2582,8 @@ echo "This is the body of an encrypted email" | mail -s "This is the subject lin
 Check cache usage for `vg_files`
 
 ```bash
-lvs -a -o lv_name,lv_attr,chunksize vg_files
+$ lvs -a -o lv_name,lv_attr,chunksize vg_files
+
   LV                              Attr       Chunk  
   [cachedata_media_cpool]         Cwi---C--- 512.00k
   [cachedata_media_cpool_cdata]   Cwi-ao----      0 
@@ -2596,7 +2599,8 @@ lvs -a -o lv_name,lv_attr,chunksize vg_files
 ```
 
 ```bash
-lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_files
+$ lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_files
+
   LV         CacheMode    CachePolicy CacheTotalBlocks CacheUsedBlocks 
   lv_media   writethrough smq                   614400            13916
   lv_private writethrough smq                   614400                0
@@ -2607,7 +2611,8 @@ Result: 6.8 GiB (13 916 × 512 KiB ≈ 6.8 GiB)
 Check cache usage for `vg_iscsi`
 
 ```bash
-lvs -a -o lv_name,lv_attr,chunksize vg_iscsi
+$ lvs -a -o lv_name,lv_attr,chunksize vg_iscsi
+
   LV                            Attr       Chunk  
   [cachedata_iscsi_cpool]       Cwi---C--- 256.00k
   [cachedata_iscsi_cpool_cdata] Cwi-ao----      0 
@@ -2618,7 +2623,8 @@ lvs -a -o lv_name,lv_attr,chunksize vg_iscsi
 ```
 
 ```bash
-lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_iscsi
+$ lvs -o lv_name,cachemode,cache_policy,cache_total_blocks,cache_used_blocks vg_iscsi
+
   LV       CacheMode CachePolicy CacheTotalBlocks CacheUsedBlocks 
   lv_iscsi writeback smq                   737280            14744
 ```
@@ -3012,7 +3018,8 @@ check_disk_pm(){
 ```
 
 ```bash
- check_disk_pm                                                                                                                                                           ✔  ⚡  55  17:51:12 
+$ check_disk_pm
+
 /dev/sda: standby
 /dev/sdb: standby
 /dev/sdc: standby
@@ -3423,3 +3430,43 @@ yay -S mdns-scanner
 ```bash
 fstabfmt -i /etc/fstab
 ```
+
+## ISCSI
+
+### Login
+
+First discovery service
+
+```bash
+$ iscsiadm --mode discovery --portal 10.0.12.90 --type sendtargets
+
+10.0.12.90:3260,1 iqn.2025-11.local.qnap-iscsi:1212121212
+```
+
+Now login to service
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --login
+```
+
+If you forget to set up credentials
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.authmethod -v CHAP
+```
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.username -v my_user
+```
+
+```bash
+iscsiadm -m node -T iqn.2025-11.local.qnap-iscsi:1212121212 -p 10.0.12.90:3260 --op update -n node.session.auth.password -v my_pass
+```
+
+Logout
+
+```bash
+iscsiadm -m node -U all
+```
+
+Now you can access volume, remember to format or/and create partition.
